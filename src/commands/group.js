@@ -12,6 +12,17 @@ function targets({ mentioned, quotedSender }) {
   return [...set];
 }
 
+/** Target (mention/reply) dicocokkan ke peserta grup; hasilnya id resmi peserta (LID atau nomor sesuai grup). */
+function resolveTargets(ctx) {
+  const ids = [];
+  for (const j of targets(ctx)) {
+    const p = ctx.findParticipant(j);
+    if (p && !ids.includes(p.id)) ids.push(p.id);
+  }
+  if (!ids.length) throw new UserError('Tag orangnya atau reply pesannya (harus anggota grup ini).');
+  return ids;
+}
+
 function protectedIds(ctx) {
   // bot dan owner tidak boleh jadi target kick (admin dicek terpisah)
   return new Set([num(ctx.sock.user?.id), num(ctx.sock.user?.lid), ...config.owners].filter(Boolean));
@@ -64,12 +75,17 @@ export default [
     admin: true,
     botAdmin: true,
     async run(ctx) {
-      const { sock, jid, meta, reply, idsOf } = ctx;
+      const { sock, jid, reply, idsOf, findParticipant } = ctx;
       const list = targets(ctx);
       if (!list.length) throw new UserError('Tag orangnya atau reply pesannya.');
       const safe = protectedIds(ctx);
-      const adminIds = new Set(meta.participants.filter((p) => p.admin).flatMap(idsOf));
-      const final = list.filter((j) => !safe.has(num(j)) && !adminIds.has(num(j)));
+      // Cocokkan target ke peserta grup (bisa LID atau nomor), lalu pakai id resmi peserta untuk aksi.
+      const final = [];
+      for (const j of list) {
+        const p = findParticipant(j);
+        if (!p || p.admin || idsOf(p).some((i) => safe.has(i))) continue;
+        if (!final.includes(p.id)) final.push(p.id);
+      }
       if (!final.length) throw new UserError('Admin dan bot tidak bisa di-kick lewat perintah ini.');
       await sock.groupParticipantsUpdate(jid, final, 'remove');
       invalidate(jid);
@@ -84,8 +100,7 @@ export default [
     admin: true,
     botAdmin: true,
     async run(ctx) {
-      const list = targets(ctx);
-      if (!list.length) throw new UserError('Tag orangnya atau reply pesannya.');
+      const list = resolveTargets(ctx);
       await ctx.sock.groupParticipantsUpdate(ctx.jid, list, 'promote');
       invalidate(ctx.jid);
       await ctx.reply('✅ Berhasil dijadikan admin.');
@@ -99,8 +114,7 @@ export default [
     admin: true,
     botAdmin: true,
     async run(ctx) {
-      const list = targets(ctx);
-      if (!list.length) throw new UserError('Tag orangnya atau reply pesannya.');
+      const list = resolveTargets(ctx);
       await ctx.sock.groupParticipantsUpdate(ctx.jid, list, 'demote');
       invalidate(ctx.jid);
       await ctx.reply('✅ Status admin dicabut.');

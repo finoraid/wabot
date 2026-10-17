@@ -9,11 +9,13 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY package.json package-lock.json ./
-# Lockfile menyimpan libsignal sebagai git+ssh; di container tidak ada kunci SSH, jadi paksa lewat HTTPS.
+# package*.json: ikut menyalin package-lock.json kalau ada (lihat README, bagian "Lockfile").
+COPY package*.json ./
+# libsignal diambil dari git (kadang ssh://); di container tidak ada kunci SSH, jadi paksa lewat HTTPS.
+# Pakai `npm ci` kalau lockfile ada, kalau tidak `npm install`.
 RUN git config --global url."https://github.com/".insteadOf ssh://git@github.com/ \
  && git config --global --add url."https://github.com/".insteadOf git@github.com: \
- && npm ci --omit=dev
+ && if [ -f package-lock.json ]; then npm ci --omit=dev --no-audit --no-fund; else npm install --omit=dev --no-audit --no-fund; fi
 
 COPY src ./src
 

@@ -147,5 +147,176 @@ await handleMessage(sock, mk('6281222222222@s.whatsapp.net', '.video bukan-link'
 assert.match(last().content.text, /Contoh/);
 ok('.video tanpa link membalas contoh pemakaian');
 
+
+// ---- 6. grup berbasis LID (Baileys v7): admin/owner/kick tetap benar ----
+{
+  const LGROUP = '120363111111111111@g.us';
+  const lidSent = [];
+  const lidSock = {
+    user: { id: '6280000000000:1@s.whatsapp.net', lid: '999:1@lid' },
+    sendMessage: async (jid, content, opts) => (lidSent.push({ jid, content, opts }), {}),
+    groupMetadata: async () => ({
+      subject: 'Grup LID',
+      addressingMode: 'lid',
+      participants: [
+        { id: '999@lid', admin: 'admin' }, // bot (hanya LID)
+        { id: '111@lid', phoneNumber: '6281222222222@s.whatsapp.net', admin: 'admin' }, // admin
+        { id: '222@lid', phoneNumber: '6283333333333@s.whatsapp.net', admin: null }, // member
+        { id: '333@lid', phoneNumber: '6284444444444@s.whatsapp.net', admin: null }, // member target
+        { id: '444@lid', phoneNumber: '6281111111111@s.whatsapp.net', admin: null }, // owner (member biasa)
+      ],
+    }),
+    groupParticipantsUpdate: async (...a) => (lidSent.push({ kick: a }), []),
+  };
+  const lk = (participant, text, extra = {}, keyExtra = {}) => ({
+    key: { remoteJid: LGROUP, participant, id: 'L' + Math.random(), fromMe: false, ...keyExtra },
+    message: { extendedTextMessage: { text, ...extra } },
+    messageTimestamp: Math.floor(Date.now() / 1000),
+  });
+  const lreset = () => { lidSent.length = 0; groupCache.invalidate(LGROUP); _resetCooldowns(); };
+  const mention = (...j) => ({ contextInfo: { mentionedJid: j } });
+
+  lreset();
+  await handleMessage(lidSock, lk('222@lid', '.kick @333', mention('333@lid'), { participantAlt: '6283333333333@s.whatsapp.net' }));
+  assert.match(lidSent.at(-1).content.text, /khusus admin/);
+  ok('LID: member biasa tidak bisa .kick');
+
+  lreset();
+  await handleMessage(lidSock, lk('111@lid', '.kick @333', mention('333@lid')));
+  assert.deepEqual(lidSent.find((x) => x.kick).kick, [LGROUP, ['333@lid'], 'remove']);
+  ok('LID: admin (dikenali lewat LID) bisa .kick, aksi pakai id LID peserta');
+
+  lreset();
+  await handleMessage(lidSock, lk('111@lid', '.kick @6284444444444', mention('6284444444444@s.whatsapp.net')));
+  assert.deepEqual(lidSent.find((x) => x.kick).kick, [LGROUP, ['333@lid'], 'remove']);
+  ok('LID: target berupa nomor dipetakan ke id LID peserta');
+
+  lreset();
+  await handleMessage(lidSock, lk('111@lid', '.kick @444 @111 @999', mention('444@lid', '111@lid', '999@lid')));
+  assert.ok(!lidSent.some((x) => x.kick), 'owner/admin/bot tidak boleh di-kick');
+  ok('LID: owner (lewat nomor), admin, dan bot (LID) dilindungi dari .kick');
+
+  lreset();
+  await handleMessage(lidSock, lk('444@lid', '.antilink on', {}, { participantAlt: '6281111111111@s.whatsapp.net' }));
+  assert.match(lidSent.at(-1).content.text, /AKTIF/);
+  ok('LID: owner (LID + participantAlt nomor) lolos cek admin');
+
+  lreset();
+  await handleMessage(lidSock, lk('222@lid', 'join https://chat.whatsapp.com/ABCDEFGHIJKLMN'));
+  assert.ok(lidSent.some((x) => x.kick?.[1]?.[0] === '222@lid' && x.kick[2] === 'remove'));
+  ok('LID: antilink mengeluarkan pengirim berdasarkan id LID');
+
+  lreset();
+  const mapped = { ...lidSock, signalRepository: { lidMapping: { getPNForLID: async (l) => (l === '222@lid' ? '6281111111111@s.whatsapp.net' : null) } } };
+  await handleMessage(mapped, lk('222@lid', '.antilink off'));
+  assert.match(lidSent.at(-1).content.text, /MATI/);
+  ok('LID: pengirim LID dipetakan ke nomor owner lewat lidMapping');
+}
+
+// ---- 7. companion_reg_refresh (PR #2765, versi tingkat-aplikasi) ----
+{
+  const { rotateAdvSecret, withAdvSecret, hasRefreshChild, attachCompanionRefresh } = await import('../src/companionRefresh.js');
+  const note = (tag) => ({ tag: 'notification', attrs: { type: 'companion_reg_refresh', id: '1' }, content: tag ? [{ tag, attrs: {} }] : [] });
+
+  assert.equal(hasRefreshChild(note('companion_reg_refresh')), true);
+  assert.equal(hasRefreshChild(note('pair-device-rotate-qr')), true);
+  assert.equal(hasRefreshChild(note('lain')), false);
+  assert.equal(hasRefreshChild({ tag: 'notification', attrs: {} }), false);
+  ok('companion_reg_refresh: hanya anak companion_reg_refresh / pair-device-rotate-qr yang diterima');
+
+  const emitted = [];
+  const creds = { advSecretKey: 'LAMA', me: undefined };
+  assert.equal(rotateAdvSecret(note('lain'), creds, (u) => emitted.push(u)), 'ignored_malformed');
+  assert.equal(creds.advSecretKey, 'LAMA');
+  assert.equal(rotateAdvSecret(note('companion_reg_refresh'), { ...creds, me: { id: 'x' } }, (u) => emitted.push(u)), 'ignored_registered');
+  assert.equal(emitted.length, 0);
+  ok('companion_reg_refresh: notifikasi cacat & sesi yang sudah punya creds.me diabaikan');
+
+  assert.equal(rotateAdvSecret(note('pair-device-rotate-qr'), creds, (u) => emitted.push(u)), 'rotated');
+  assert.notEqual(creds.advSecretKey, 'LAMA');
+  assert.equal(Buffer.from(creds.advSecretKey, 'base64').length, 32);
+  assert.deepEqual(emitted, [{ advSecretKey: creds.advSecretKey }]);
+  const first = creds.advSecretKey;
+  rotateAdvSecret(note('companion_reg_refresh'), creds, () => {});
+  assert.notEqual(creds.advSecretKey, first);
+  ok('companion_reg_refresh: adv secret baru 32 byte acak, disimpan lewat creds.update');
+
+  const qr = 'https://wa.me/settings/linked_devices#REF1,NOISE,IDENT,LAMA,5';
+  assert.equal(withAdvSecret(qr, 'BARU+/='), 'https://wa.me/settings/linked_devices#REF1,NOISE,IDENT,BARU+/=,5');
+  assert.equal(withAdvSecret('bukan,qr', 'X'), 'bukan,qr');
+  ok('QR: field adv secret diganti, ref & field lain tetap, format asing dibiarkan');
+
+  // socket palsu: alur penuh (QR tampil -> notifikasi -> QR baru dengan ref sama, secret beda)
+  const listeners = {};
+  const evs = [];
+  const fakeSock = {
+    authState: { creds: { advSecretKey: 'LAMA', me: undefined } },
+    ws: { on: (n, f) => (listeners[n] = f) },
+    ev: { emit: (n, u) => evs.push([n, u]) },
+  };
+  const seen = [];
+  const { patchQr } = attachCompanionRefresh(fakeSock, { onQr: (q) => seen.push(q), log: () => {} });
+  assert.equal(patchQr(qr), qr); // belum ada refresh: QR tidak berubah
+  listeners['CB:notification,type:companion_reg_refresh'](note('companion_reg_refresh'));
+  assert.equal(seen.length, 1);
+  assert.match(seen[0], /#REF1,NOISE,IDENT,/);
+  assert.ok(!seen[0].includes(',LAMA,'));
+  assert.equal(evs[0][0], 'creds.update');
+  // QR berikutnya dari library (masih membawa secret lama di closure-nya) harus ikut dikoreksi
+  const next = patchQr('https://wa.me/settings/linked_devices#REF2,NOISE,IDENT,LAMA,5');
+  assert.ok(next.includes(fakeSock.authState.creds.advSecretKey) && next.includes('#REF2,'));
+  ok('companion_reg_refresh: QR di layar diperbarui (ref sama), QR berikutnya ikut memakai secret baru');
+}
+
+// ---- 8. halaman QR web ----
+{
+  const { createWebServer, loginState, setQr, describeState } = await import('../src/web.js');
+  const KEY = 'kunci-rahasia-tes-1234567890';
+  const srv = createWebServer({ qrKey: KEY, log: () => {} });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const get = async (u) => { const r = await fetch(base + u); return { status: r.status, body: await r.text(), type: r.headers.get('content-type') }; };
+
+  assert.equal((await get('/qr')).status, 403);
+  assert.equal((await get('/qr?key=salah')).status, 403);
+  assert.equal((await get('/qr.json?key=salah')).status, 403);
+  const page = await get(`/qr?key=${KEY}`);
+  assert.equal(page.status, 200);
+  assert.match(page.type, /text\/html/);
+  ok('/qr menolak key salah / kosong, menerima key benar');
+
+  let j = JSON.parse((await get(`/qr.json?key=${KEY}`)).body);
+  assert.equal(j.status, 'waiting');
+  assert.equal(j.image, null);
+  setQr('https://wa.me/settings/linked_devices#R,N,I,A,5');
+  j = JSON.parse((await get(`/qr.json?key=${KEY}`)).body);
+  assert.equal(j.status, 'qr');
+  assert.match(j.image, /^data:image\/png;base64,/);
+  ok('/qr.json: menunggu -> QR dirender ke gambar PNG');
+
+  Object.assign(loginState, { connected: true, number: '6280000000000' });
+  setQr(null);
+  j = JSON.parse((await get(`/qr.json?key=${KEY}`)).body);
+  assert.equal(j.status, 'connected');
+  assert.match(j.text, /Sudah terhubung/);
+  assert.equal(j.image, null);
+  ok('setelah tertaut halaman bilang "Sudah terhubung" dan tidak memberi QR');
+
+  const health = JSON.parse((await get('/')).body);
+  assert.equal(health.ok, true);
+  assert.ok(!JSON.stringify(health).includes('6280000000000'));
+  ok('healthcheck "/" tetap jalan dan tidak membocorkan nomor/QR');
+
+  assert.equal(describeState({ mode: 'code', connected: false }).status, 'code-mode');
+  assert.equal(describeState({ mode: 'qr', connected: false, registered: true }).status, 'reconnecting');
+  const off = createWebServer({ qrKey: '', log: () => {} });
+  await new Promise((r) => off.listen(0, '127.0.0.1', r));
+  const offRes = await fetch(`http://127.0.0.1:${off.address().port}/qr?key=`);
+  assert.equal(offRes.status, 404);
+  off.close();
+  srv.close();
+  ok('QR_KEY kosong = halaman QR mati (404)');
+}
+
 console.log(`\n${passed} tes lulus`);
 process.exit(0);

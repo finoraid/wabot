@@ -1,20 +1,17 @@
 import fs from 'node:fs/promises';
-import http from 'node:http';
-import makeWASocket, {
-  Browsers,
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore,
-  useMultiFileAuthState,
-} from '@whiskeysockets/baileys';
+import * as baileys from '@whiskeysockets/baileys';
 import pino from 'pino';
-import qrcode from 'qrcode-terminal';
+import { attachCompanionRefresh } from './companionRefresh.js';
 import { config } from './config.js';
 import { handleMessage } from './handler.js';
 import { invalidate, peek } from './groupCache.js';
 import { loadCommands } from './registry.js';
 import { flushStore, getGroup } from './store.js';
 import { num } from './utils.js';
+import { createWebServer, loginState, setQr } from './web.js';
+
+const makeWASocket = baileys.default?.default ?? baileys.default ?? baileys.makeWASocket;
+const { Browsers, DisconnectReason, makeCacheableSignalKeyStore, useMultiFileAuthState } = baileys;
 
 const logger = pino({ level: config.logLevel });
 const startedAt = Date.now();
@@ -22,13 +19,16 @@ const status = { connected: false, number: null };
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
-// ---------- HTTP kecil untuk healthcheck (Railway) ----------
-http
-  .createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, connected: status.connected, uptime: Math.floor((Date.now() - startedAt) / 1000) }));
-  })
-  .listen(config.port, () => log(`healthcheck di port ${config.port}`));
+// ---------- HTTP: healthcheck di "/" + halaman QR di "/qr?key=<QR_KEY>" ----------
+loginState.mode = config.loginMode;
+createWebServer({ qrKey: config.qrKey, startedAt, log }).listen(config.port, () => log(`HTTP di port ${config.port}`));
+if (config.loginMode === 'qr') {
+  log(
+    config.qrKey
+      ? 'Mode login QR: buka https://<domain-railway>/qr?key=<QR_KEY> (nilai QR_KEY dari Variables)'
+      : 'PERINGATAN: LOGIN_MODE=qr tapi QR_KEY belum diisi, halaman /qr mati. Isi QR_KEY di Variables.',
+  );
+}
 
 let reconnectTimer = null;
 let attempts = 0; // untuk backoff: 3d, 6d, 12d, ... maks 30d
@@ -56,36 +56,53 @@ async function start() {
     cachedGroupMetadata: async (jid) => peek(jid),
     getMessage: async () => undefined,
   };
-  try {
-    opts.version = (await fetchLatestBaileysVersion()).version;
-  } catch {
-    log('gagal cek versi WhatsApp terbaru, pakai versi bawaan library');
+  // Versi WA Web: coba sumber WA Web dulu, lalu daftar Baileys, terakhir bawaan library.
+  for (const fn of [baileys.fetchLatestWaWebVersion, baileys.fetchLatestBaileysVersion]) {
+    if (typeof fn !== 'function') continue;
+    try {
+      const v = (await fn()).version;
+      if (Array.isArray(v) && v.length === 3) {
+        opts.version = v;
+        break;
+      }
+    } catch {
+      /* coba sumber berikutnya */
+    }
   }
+  if (!opts.version) log('gagal cek versi WhatsApp terbaru, pakai versi bawaan library');
 
   const sock = makeWASocket(opts);
   let pairingRequested = false;
+  loginState.registered = !!state.creds.registered;
 
   sock.ev.on('creds.update', saveCreds);
+  // Server mencabut adv secret saat pairing: ganti secret dan perbarui QR (lihat companionRefresh.js).
+  const { patchQr } = attachCompanionRefresh(sock, { onQr: setQr, log });
 
   sock.ev.on('connection.update', async (u) => {
     const { connection, lastDisconnect, qr } = u;
 
-    if (qr) {
-      if (config.pairingNumber && !sock.authState.creds.registered) {
-        if (!pairingRequested) {
+    if (qr && !sock.authState.creds.registered) {
+      if (config.loginMode === 'code') {
+        if (!config.pairingNumber) {
+          if (!pairingRequested) {
+            pairingRequested = true;
+            console.error('[pairing] LOGIN_MODE=code tapi PAIRING_NUMBER kosong. Isi PAIRING_NUMBER atau pakai LOGIN_MODE=qr.');
+          }
+        } else if (!pairingRequested) {
           pairingRequested = true;
           try {
             const code = await sock.requestPairingCode(config.pairingNumber);
             const pretty = code.match(/.{1,4}/g)?.join('-') || code;
+            loginState.pairingCode = pretty;
             log(`\n==============================\n KODE PAIRING: ${pretty}\n==============================\nWhatsApp > Perangkat tertaut > Tautkan perangkat > Tautkan dengan nomor telepon`);
           } catch (e) {
             pairingRequested = false;
             console.error('[pairing] gagal minta kode:', e.message);
           }
         }
-      } else if (!config.pairingNumber) {
-        log('Scan QR berikut dari WhatsApp > Perangkat tertaut:');
-        qrcode.generate(qr, { small: true });
+      } else {
+        setQr(patchQr(qr));
       }
     }
 
@@ -93,11 +110,15 @@ async function start() {
       status.connected = true;
       attempts = 0;
       status.number = num(sock.user?.id);
+      Object.assign(loginState, { connected: true, number: status.number, registered: true });
+      setQr(null);
       log(`✅ Terhubung sebagai ${status.number}`);
     }
 
     if (connection === 'close') {
       status.connected = false;
+      loginState.connected = false;
+      setQr(null);
       const code = lastDisconnect?.error?.output?.statusCode;
       log(`koneksi tertutup (kode ${code ?? 'tidak diketahui'})`);
 
@@ -137,7 +158,9 @@ async function start() {
       if (!['add', 'remove'].includes(action) || !getGroup(id).welcome) return;
       const meta = await sock.groupMetadata(id);
       const jids = participants.map((p) => (typeof p === 'string' ? p : p.id)).filter(Boolean);
-      if (jids.some((j) => num(j) === num(sock.user?.id))) return;
+      const botIds = new Set([sock.user?.id, sock.user?.lid].filter(Boolean).map(num));
+      const allIds = participants.flatMap((p) => (typeof p === 'string' ? [p] : [p.id, p.lid, p.phoneNumber, p.jid])).filter(Boolean).map(num);
+      if (allIds.some((i) => botIds.has(i))) return;
       const tags = jids.map((j) => `@${num(j)}`).join(' ');
       const text =
         action === 'add'

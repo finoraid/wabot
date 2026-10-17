@@ -12,8 +12,11 @@ export const config = {
   prefix: process.env.PREFIX || '.',
   // Nomor owner, pisahkan dengan koma, format internasional tanpa + (contoh: 628123456789)
   owners: (process.env.OWNER_NUMBERS || '').split(',').map(digits).filter(Boolean),
-  // Isi untuk login lewat pairing code. Kosongkan untuk login lewat QR di log.
+  // Cara login: 'qr' (halaman web /qr?key=QR_KEY, default) atau 'code' (pairing code di log, butuh PAIRING_NUMBER).
+  loginMode: String(process.env.LOGIN_MODE || 'qr').toLowerCase() === 'code' ? 'code' : 'qr',
   pairingNumber: digits(process.env.PAIRING_NUMBER),
+  // Kunci akses halaman /qr. Kosong = halaman QR dimatikan.
+  qrKey: process.env.QR_KEY || '',
 
   dataDir: path.resolve(process.env.DATA_DIR || './data'),
 
