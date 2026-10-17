@@ -21,7 +21,10 @@ export const config = {
   dataDir: path.resolve(process.env.DATA_DIR || './data'),
 
   geminiKey: process.env.GEMINI_API_KEY || '',
-  geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+
+  // Opsional: kunci FastSaver (https://fastsaver.io). Kalau diisi, .video/.mp3 memakai FastSaver dulu, yt-dlp jadi cadangan.
+  fastsaverKey: process.env.FASTSAVER_KEY || '',
 
   ytdlpBin: process.env.YTDLP_BIN || 'yt-dlp',
   ytCookies: process.env.YTDLP_COOKIES || '', // path file cookies.txt (opsional)

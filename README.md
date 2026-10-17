@@ -35,7 +35,7 @@ Menambah perintah baru: buat file di `src/commands/` yang mengekspor `{ name, al
    - `OWNER_NUMBERS` — nomor owner (boleh beberapa, pisah koma)
    - `GEMINI_API_KEY` — dari [Google AI Studio](https://aistudio.google.com/apikey)
    - `DATA_DIR` = `/data`
-   - opsional: `PREFIX`, `BOT_NAME`, `GEMINI_MODEL`
+   - opsional: `PREFIX`, `BOT_NAME`, `GEMINI_MODEL` (default `gemini-3.6-flash`), `FASTSAVER_KEY` (downloader lebih andal untuk YouTube; yt-dlp jadi cadangan)
 5. Deploy. Buka `https://<domain-railway-kamu>/qr?key=<QR_KEY>` di browser.
 6. Di HP nomor bot: **WhatsApp → Perangkat tertaut → Tautkan perangkat**, scan QR di halaman itu.
 7. Halaman berubah jadi **"Sudah terhubung"** dan log menampilkan `✅ Terhubung`. Kirim `.menu` ke nomor bot.

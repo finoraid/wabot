@@ -1,4 +1,7 @@
 import fs from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { config } from '../config.js';
 import { assertPublicUrl, formatBytes, isUrl, run, UserError, withTmp } from '../utils.js';
@@ -69,6 +72,91 @@ async function ytdlp(dir, input, mode) {
   return { file: path.join(dir, media[0]), title };
 }
 
+
+// ---- FastSaver (opsional, sama seperti media_bot): dipakai dulu kalau FASTSAVER_KEY diisi ----
+const FS_BASE = 'https://api.fastsaver.io/v1';
+const isYoutube = (u) => /^(https?:\/\/)?([\w-]+\.)?(youtube\.com|youtu\.be|youtube-nocookie\.com)\//i.test(u);
+
+async function fsCall(pathname, { method = 'GET', body, query } = {}) {
+  const url = `${FS_BASE}${pathname}${query ? `?${new URLSearchParams(query)}` : ''}`;
+  const res = await fetch(url, {
+    method,
+    headers: { 'X-Api-Key': config.fastsaverKey, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(60_000),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data || data.ok === false) {
+    throw new Error(`FastSaver HTTP ${res.status}: ${data?.detail || data?.message || 'tanpa pesan'}`);
+  }
+  return data;
+}
+
+async function fetchToFile(url, dest) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(180_000) });
+  if (!res.ok || !res.body) throw new Error(`unduh file HTTP ${res.status}`);
+  const ct = String(res.headers.get('content-type') || '').toLowerCase();
+  if (ct.includes('text/html') || ct.includes('application/json')) throw new Error('URL hasil bukan file media');
+  const len = Number(res.headers.get('content-length') || 0);
+  if (len > config.maxMediaMB * 1024 * 1024) throw new UserError(`File ${formatBytes(len)} melebihi batas ${config.maxMediaMB} MB.`);
+  await pipeline(Readable.fromWeb(res.body), createWriteStream(dest));
+}
+
+async function toMp3(dir, input) {
+  const out = path.join(dir, 'audio.mp3');
+  await run('ffmpeg', ['-y', '-i', input, '-vn', '-codec:a', 'libmp3lame', '-b:a', '128k', out], { timeout: 180_000 });
+  return out;
+}
+
+async function fastsaver(dir, input, mode) {
+  let title = '';
+  let dlUrl;
+  let musicUrl = null;
+  if (isYoutube(input)) {
+    const info = await fsCall('/youtube/info', { query: { url: input } });
+    title = info.title || info.data?.title || '';
+    const formats = info.formats || info.data?.formats || [];
+    let format = 'audio';
+    if (mode === 'video') {
+      const score = (x) => Number(String(x?.quality || x?.format || '').match(/(\d{3,4})p/i)?.[1] || 0);
+      const vids = formats.filter((x) => String(x?.format || x?.type || '').toLowerCase() !== 'audio' && score(x) > 0 && score(x) <= 720);
+      const best = vids.sort((a, b) => score(b) - score(a))[0];
+      format = best?.format || best?.itag || '720p';
+    }
+    const d = await fsCall('/youtube/download', { method: 'POST', body: { url: input, format } });
+    dlUrl = d.download_url;
+  } else {
+    const d = await fsCall('/fetch', { query: { url: input } });
+    title = d.title || d.caption || d.description || '';
+    dlUrl = d.download_url || d.url;
+    musicUrl = d.music_url || d.audio_url || null;
+  }
+  if (!dlUrl && !(mode === 'audio' && musicUrl)) throw new Error('FastSaver tidak memberi link unduhan');
+
+  if (mode === 'audio') {
+    const src = path.join(dir, 'src.bin');
+    await fetchToFile(musicUrl || dlUrl, src);
+    return { file: await toMp3(dir, src), title };
+  }
+  const file = path.join(dir, 'video.mp4');
+  await fetchToFile(dlUrl, file);
+  return { file, title };
+}
+
+async function getMedia(dir, input, mode) {
+  if (config.fastsaverKey && !input.startsWith('ytsearch')) {
+    try {
+      return await fastsaver(dir, input, mode);
+    } catch (e) {
+      if (e instanceof UserError) throw e;
+      console.error('[fastsaver]', e.message, '-> fallback yt-dlp');
+      // bersihkan sisa file sebelum yt-dlp
+      for (const n of await fs.readdir(dir).catch(() => [])) await fs.rm(path.join(dir, n), { force: true });
+    }
+  }
+  return ytdlp(dir, input, mode);
+}
+
 async function sendResult({ sock, jid, msg }, { file, title }, mode) {
   const { size } = await fs.stat(file);
   if (size > config.maxMediaMB * 1024 * 1024) throw new UserError(`File ${formatBytes(size)} melebihi batas ${config.maxMediaMB} MB.`);
@@ -91,7 +179,7 @@ async function handle(ctx, input, mode) {
   try {
     await ctx.react('⏳');
     const result = await withTmp(async (dir) => {
-      const r = await ytdlp(dir, input, mode);
+      const r = await getMedia(dir, input, mode);
       await sendResult(ctx, r, mode);
       return r;
     });

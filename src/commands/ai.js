@@ -43,9 +43,13 @@ async function askGemini(contents) {
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    console.error('[gemini]', res.status, data?.error?.message);
+    const msg = String(data?.error?.message || '');
+    console.error('[gemini]', res.status, config.geminiModel, msg);
     if (res.status === 429) throw new UserError('Kuota AI sedang habis. Coba lagi nanti.');
-    if (res.status === 400 || res.status === 403) throw new UserError('API key Gemini ditolak atau model tidak tersedia. Cek GEMINI_API_KEY dan GEMINI_MODEL.');
+    if (res.status === 404) throw new UserError(`Model Gemini "${config.geminiModel}" sudah tidak tersedia. Ganti GEMINI_MODEL (mis. gemini-3.6-flash).`);
+    if (res.status === 400 && /api key/i.test(msg)) throw new UserError('GEMINI_API_KEY tidak valid. Buat key baru di Google AI Studio.');
+    if (res.status === 403) throw new UserError('GEMINI_API_KEY ditolak (izin/proyek/wilayah). Cek key di Google AI Studio.');
+    if (res.status === 400) throw new UserError('Permintaan ke Gemini ditolak. Cek GEMINI_MODEL dan lihat log server.');
     throw new UserError('Layanan AI sedang bermasalah. Coba lagi nanti.');
   }
   if (data.promptFeedback?.blockReason) throw new UserError('Pertanyaan ini ditolak oleh filter keamanan AI.');
