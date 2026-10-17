@@ -26,6 +26,9 @@ export const config = {
   // Opsional: kunci FastSaver (https://fastsaver.io). Kalau diisi, .video/.mp3 memakai FastSaver dulu, yt-dlp jadi cadangan.
   fastsaverKey: process.env.FASTSAVER_KEY || '',
 
+  // Opsional: token Replicate untuk .remini berkualitas AI (Real-ESRGAN). Kosong = penajaman lokal sederhana.
+  replicateToken: process.env.REPLICATE_API_TOKEN || '',
+
   ytdlpBin: process.env.YTDLP_BIN || 'yt-dlp',
   ytCookies: process.env.YTDLP_COOKIES || '', // path file cookies.txt (opsional)
   maxMediaMB: int(process.env.MAX_MEDIA_MB, 64),

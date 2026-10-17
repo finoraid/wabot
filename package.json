@@ -2,13 +2,13 @@
   "name": "wabot",
   "version": "1.1.0",
   "private": true,
-  "description": "Bot WhatsApp (Baileys): stiker, downloader, AI Gemini, admin grup",
+  "description": "Bot WhatsApp (Baileys): stiker, downloader, AI Gemini, alat gambar, admin & moderasi grup",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "check": "node scripts/selftest.js"
+    "check": "node scripts/selftest.js && node scripts/selftest-features.js"
   },
   "engines": {
     "node": ">=20"
@@ -19,5 +19,8 @@
     "pino": "^9.0.0",
     "qrcode": "^1.5.4",
     "sharp": "^0.34.0"
+  },
+  "optionalDependencies": {
+    "@imgly/background-removal-node": ">=1.4.0 <2"
   }
 }

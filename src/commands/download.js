@@ -228,4 +228,26 @@ export default [
       await handle(ctx, `ytsearch1:${q}`, 'audio');
     },
   },
+  ...[
+    { name: 'tt', aliases: ['tiktok'], host: /tiktok\.com$/i, mode: 'video', desc: 'Unduh video TikTok', label: 'TikTok' },
+    { name: 'ttmp3', aliases: ['tiktokmp3'], host: /tiktok\.com$/i, mode: 'audio', desc: 'Unduh audio MP3 dari TikTok', label: 'TikTok' },
+    { name: 'ig', aliases: ['instagram', 'reels'], host: /instagram\.com$/i, mode: 'video', desc: 'Unduh video/reels Instagram', label: 'Instagram' },
+  ].map((c) => ({
+    name: c.name,
+    aliases: c.aliases,
+    usage: '<link>',
+    category: 'Media',
+    desc: c.desc,
+    async run(ctx) {
+      const url = ctx.args[0];
+      if (!isUrl(url)) throw new UserError(`Contoh: ${ctx.prefix}${c.name} https://...`);
+      let host = '';
+      try {
+        host = new URL(url).hostname.replace(/^(www|vm|vt|m)\./i, '');
+      } catch {}
+      if (!c.host.test(host)) throw new UserError(`Perintah ini khusus tautan ${c.label}. Untuk situs lain pakai ${ctx.prefix}${c.mode === 'audio' ? 'mp3' : 'video'}.`);
+      await assertPublicUrl(url);
+      await handle(ctx, url, c.mode);
+    },
+  })),
 ];

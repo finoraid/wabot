@@ -1,5 +1,6 @@
 import { config } from './config.js';
-import { getGroup } from './store.js';
+import { addStrike, clearStrikes, isFlood, isToxic, MAX_STRIKES } from './moderation.js';
+import { countMessage, getGlobal, getGroup } from './store.js';
 import { getMeta } from './groupCache.js';
 import { findCommand } from './registry.js';
 import { getBody, getContextInfo, num } from './utils.js';
@@ -65,6 +66,7 @@ export async function handleMessage(sock, msg) {
   if (!msg.message) return;
 
   const isGroup = jid.endsWith('@g.us');
+  if (isGroup && msg.key.participant && !msg.key.fromMe) countMessage(jid, msg.key.participant); // untuk .rank
   const body = getBody(msg).trim();
   if (!body) return;
 
@@ -104,6 +106,36 @@ export async function handleMessage(sock, msg) {
     return;
   }
 
+  // ---- Antitoxic & antispam: hanya untuk non-admin ----
+  if (isGroup && meta && !isAdmin && !isOwner && !msg.key.fromMe) {
+    const g = getGroup(jid);
+    const target = msg.key.participant;
+    const key = `${jid}|${target}`;
+    const punish = async (why) => {
+      const n = addStrike(key);
+      if (n >= MAX_STRIKES) {
+        clearStrikes(key);
+        if (isBotAdmin && target) {
+          await sock.sendMessage(jid, { text: `🚫 @${num(target)} dikeluarkan: ${why} (${MAX_STRIKES}x peringatan).`, mentions: [target] });
+          await sock.groupParticipantsUpdate(jid, [target], 'remove').catch(() => {});
+        } else {
+          await sock.sendMessage(jid, { text: `🚫 @${num(target)} sudah ${MAX_STRIKES}x melanggar (${why}). Jadikan bot admin supaya bisa mengeluarkan.`, mentions: [target] });
+        }
+      } else {
+        await sock.sendMessage(jid, { text: `⚠️ @${num(target)} ${why}. Peringatan ${n}/${MAX_STRIKES}.`, mentions: [target] });
+      }
+    };
+    if (g.antitoxic && isToxic(body)) {
+      if (isBotAdmin) await sock.sendMessage(jid, { delete: msg.key }).catch(() => {});
+      await punish('dilarang berkata kasar');
+      return;
+    }
+    if (g.antispam && isFlood(key)) {
+      await punish('jangan spam');
+      return;
+    }
+  }
+
   // ---- Command ----
   if (!body.startsWith(config.prefix)) return;
   const m = body.slice(config.prefix.length).trim().match(/^(\S+)\s*([\s\S]*)$/);
@@ -113,6 +145,13 @@ export async function handleMessage(sock, msg) {
 
   const text = m[2].trim();
   const args = text ? text.split(/\s+/) : [];
+
+  // Mode privat: hanya owner & nomor yang diizinkan (.allow) yang dilayani. Grup yang di-mute: hanya admin/owner.
+  if (!isOwner) {
+    const gl = getGlobal();
+    if (gl.mode === 'private' && !gl.allowed.some((n) => senderIds.has(n))) return;
+    if (isGroup && getGroup(jid).muted && !isAdmin) return;
+  }
 
   if (cmd.owner && !isOwner) return reply('⛔ Perintah ini khusus owner bot.');
   if (cmd.group && !isGroup) return reply('👥 Perintah ini hanya bisa dipakai di grup.');

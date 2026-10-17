@@ -1,6 +1,6 @@
 # WaBot — Bot WhatsApp (Baileys) untuk Railway
 
-Fitur (Baileys 7.0.0-rc14, mendukung LID): stiker (gambar/video/GIF), downloader (YouTube, TikTok, IG, dll lewat yt-dlp), AI Gemini, dan admin grup (tagall, hidetag, kick, promote/demote, antilink, welcome, buka/tutup grup, link grup).
+Fitur (Baileys 7.0.0-rc14, mendukung LID): stiker (gambar/video/GIF, teks brat, meme), konversi stiker, downloader (YouTube, TikTok, IG, dll), AI Gemini (tanya, OCR, terjemah, ringkas), hapus latar & perjelas foto, pengingat, serta admin & moderasi grup (antispam, antitoxic, poll, absen, peringkat).
 
 > ⚠️ Bot ini memakai library **tidak resmi** (Baileys). Ada risiko nomor dibatasi/banned oleh WhatsApp. **Pakai nomor cadangan, jangan nomor utama.**
 > ⚠️ Baileys butuh koneksi yang menyala terus, jadi **tidak bisa di Vercel** (serverless). Panduan ini untuk **Railway**.
@@ -11,16 +11,35 @@ Prefix default `.` (ubah lewat env `PREFIX`).
 
 | Perintah | Fungsi |
 |---|---|
-| `.menu` `.ping` | daftar perintah, cek bot |
+| `.menu` `.ping` `.owner` | daftar perintah, cek bot, kontak owner |
 | `.sticker` (alias `.s`) | kirim/reply gambar, video ≤10 detik, atau GIF |
+| `.brat <teks>` `.smeme atas\|bawah` | stiker teks gaya brat; stiker meme dari gambar |
+| `.toimg` `.tovideo` | reply stiker → gambar / video (stiker animasi) |
+| `.removebg [stiker]` | hapus latar gambar (model lokal, tanpa API key); hasil PNG transparan |
+| `.remini` | perjelas & perbesar foto (AI bila `REPLICATE_API_TOKEN` diisi, kalau tidak penajaman sederhana) |
 | `.video <link>` `.mp3 <link>` | unduh video / audio dari link |
+| `.tt` `.ttmp3` `.ig` | pintasan TikTok (video / MP3) dan Instagram |
 | `.play <judul>` | cari lagu di YouTube, kirim MP3 |
 | `.ai <pertanyaan>` | tanya Gemini (bisa kirim/reply gambar), `.resetai` hapus ingatan |
+| `.ocr` | baca teks dari gambar |
+| `.translate <bahasa> <teks>` (`.tr`) | terjemahkan teks atau pesan yang di-reply |
+| `.ringkas <link>` | ringkas pesan yang di-reply atau isi artikel dari tautan |
+| `.remind <waktu> <pesan>` | pengingat (`10m`, `2j`, `1h30m`; maks 7 hari), `.remind list`, `.remind batal <no>` |
 | `.tagall` `.hidetag` | mention semua anggota (admin) |
 | `.kick` `.promote` `.demote` | kelola anggota, tag orang atau reply pesannya (admin, bot harus admin) |
 | `.antilink on/off` | hapus pesan + kick pengirim link grup WhatsApp |
+| `.antispam on/off` | peringatkan pengirim 7 pesan dalam 8 detik; 3x peringatan → kick (admin dikecualikan) |
+| `.antitoxic on/off` | hapus kata kasar + peringatan; 3x → kick. Tambah kata lewat env `TOXIC_WORDS` |
 | `.welcome on/off` | sambutan anggota baru / keluar |
+| `.botoff` `.boton` | matikan/nyalakan bot untuk anggota biasa di grup (admin tetap bisa) |
+| `.rank` | 10 anggota paling aktif (hitung pesan sejak bot aktif), `.rank reset` (admin) |
+| `.poll Judul \| A \| B`, `.vote <no>` | pemungutan suara; `.poll hasil`, `.poll selesai` |
+| `.absen mulai <judul>`, `.absen` | daftar hadir; `.absen list`, `.absen selesai` |
 | `.grup buka/tutup` `.linkgc` | atur chat grup, ambil link undangan |
+| `.mode public/private` (owner) | mode privat: hanya owner & nomor yang diizinkan |
+| `.allow add/del/list <nomor>` (owner) | kelola nomor yang diizinkan saat mode privat |
+
+Data yang bertahan setelah restart (di Volume `/data`): pengaturan grup, mode, daftar izin, pengingat, dan peringkat. Poll dan absen hanya di memori.
 
 Menambah perintah baru: buat file di `src/commands/` yang mengekspor `{ name, aliases, category, desc, run(ctx) }`. Otomatis muncul di `.menu`.
 
@@ -35,7 +54,7 @@ Menambah perintah baru: buat file di `src/commands/` yang mengekspor `{ name, al
    - `OWNER_NUMBERS` — nomor owner (boleh beberapa, pisah koma)
    - `GEMINI_API_KEY` — dari [Google AI Studio](https://aistudio.google.com/apikey)
    - `DATA_DIR` = `/data`
-   - opsional: `PREFIX`, `BOT_NAME`, `GEMINI_MODEL` (default `gemini-3.6-flash`), `FASTSAVER_KEY` (downloader lebih andal untuk YouTube; yt-dlp jadi cadangan)
+   - opsional: `REPLICATE_API_TOKEN` (`.remini` AI), `TOXIC_WORDS`, `PREFIX`, `BOT_NAME`, `GEMINI_MODEL` (default `gemini-3.6-flash`), `FASTSAVER_KEY` (downloader lebih andal untuk YouTube; yt-dlp jadi cadangan)
 5. Deploy. Buka `https://<domain-railway-kamu>/qr?key=<QR_KEY>` di browser.
 6. Di HP nomor bot: **WhatsApp → Perangkat tertaut → Tautkan perangkat**, scan QR di halaman itu.
 7. Halaman berubah jadi **"Sudah terhubung"** dan log menampilkan `✅ Terhubung`. Kirim `.menu` ke nomor bot.
@@ -100,3 +119,11 @@ Tes mandiri tanpa WhatsApp: `npm run check` (tidak menguji koneksi/pairing asli 
 - Link yang diunduh divalidasi: alamat lokal/privat ditolak. Ini perlindungan dasar, bukan jaminan penuh.
 - Satu unduhan per pengguna, maksimal `MAX_DOWNLOADS` bersamaan (default 2), dan cooldown 2 detik per pengguna.
 - Jangan commit `.env`, `data/`, atau `cookies.txt`.
+
+
+## Catatan fitur baru
+
+- `.removebg` memakai paket `@imgly/background-removal-node` (opsional, terpasang otomatis). Pemakaian memori cukup besar saat memproses (sekitar beberapa ratus MB) dan pemakaian pertama bisa lambat. Kalau paket gagal terpasang, bot tetap jalan dan `.removebg` membalas pesan error.
+- `.remini` dengan `REPLICATE_API_TOKEN` memanggil model `nightmareai/real-esrgan` di Replicate (berbayar per pemakaian). Kalau gagal, bot jatuh ke mode lokal.
+- `.brat`/`.smeme` butuh font di server; `Dockerfile` sudah memasang `fonts-dejavu-core` (emoji tidak tampil di stiker teks).
+- Jalankan `npm run check` untuk tes mandiri (tanpa koneksi WhatsApp).

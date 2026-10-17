@@ -1,9 +1,9 @@
 FROM node:22-slim
 
 # git: dibutuhkan npm untuk dependensi libsignal milik Baileys
-# ffmpeg: stiker animasi + konversi audio | python3/pip: yt-dlp
+# ffmpeg: stiker animasi + konversi audio | python3/pip: yt-dlp | fonts-dejavu-core: teks stiker .brat/.smeme
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ffmpeg python3 python3-pip ca-certificates \
+ && apt-get install -y --no-install-recommends git ffmpeg python3 python3-pip ca-certificates fonts-dejavu-core fontconfig \
  && pip3 install --no-cache-dir --break-system-packages -U "yt-dlp[default]" \
  && echo "--js-runtimes node" > /etc/yt-dlp.conf \
  && rm -rf /var/lib/apt/lists/*

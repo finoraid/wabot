@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { handleMessage } from './handler.js';
 import { invalidate, peek } from './groupCache.js';
 import { loadCommands } from './registry.js';
+import { startReminders } from './reminders.js';
 import { flushStore, getGroup } from './store.js';
 import { num } from './utils.js';
 import { createWebServer, loginState, setQr } from './web.js';
@@ -113,6 +114,7 @@ async function start() {
       Object.assign(loginState, { connected: true, number: status.number, registered: true });
       setQr(null);
       log(`✅ Terhubung sebagai ${status.number}`);
+      startReminders(sock, log);
     }
 
     if (connection === 'close') {
