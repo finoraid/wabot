@@ -5,6 +5,8 @@ import { getMeta } from './groupCache.js';
 import { findCommand } from './registry.js';
 import { checkAfk } from './afk.js';
 import { handleGameMessage } from './games.js';
+import { addChatXp, fmt } from './economy.js';
+import { observeMessage } from './antidelete.js';
 import { getBody, getContextInfo, getQuotedText, num } from './utils.js';
 
 const COOLDOWN_MS = 2000;
@@ -68,7 +70,15 @@ export async function handleMessage(sock, msg) {
   if (!msg.message) return;
 
   const isGroup = jid.endsWith('@g.us');
-  if (isGroup && msg.key.participant && !msg.key.fromMe) countMessage(jid, msg.key.participant); // untuk .rank
+  if (isGroup && msg.key.participant && !msg.key.fromMe) {
+    countMessage(jid, msg.key.participant); // untuk .rank
+    const xp = addChatXp(num(msg.key.participant)); // XP & level (ada jeda per orang)
+    if (xp?.leveledUp) {
+      sock.sendMessage(jid, { text: `🎉 @${num(msg.key.participant)} naik ke *level ${xp.level}*! Bonus ${fmt(xp.bonus)} koin.`, mentions: [msg.key.participant] }).catch(() => {});
+    }
+  }
+  // Anti-hapus & anti-sekali-lihat: catat pesan masuk, tangkap pesan yang ditarik, teruskan media sekali lihat.
+  await observeMessage(sock, msg).catch((e) => console.error('[antidelete]', e.message));
   const body = getBody(msg).trim();
   if (!body) return;
 

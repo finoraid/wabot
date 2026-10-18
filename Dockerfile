@@ -17,6 +17,12 @@ RUN git config --global url."https://github.com/".insteadOf ssh://git@github.com
  && git config --global --add url."https://github.com/".insteadOf git@github.com: \
  && if [ -f package-lock.json ]; then npm ci --omit=dev --no-audit --no-fund; else npm install --omit=dev --no-audit --no-fund; fi
 
+# Chromium untuk cadangan downloader (deteksi video di halaman yang tidak didukung yt-dlp).
+# Gagal pasang tidak menghentikan build: bot tetap jalan, hanya tanpa cadangan ini.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN (npx --no-install playwright-core install --with-deps chromium && rm -rf /var/lib/apt/lists/*) \
+ || echo "PERINGATAN: Chromium gagal dipasang, deteksi video via browser nonaktif"
+
 COPY src ./src
 
 ENV NODE_ENV=production \

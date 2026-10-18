@@ -23,6 +23,8 @@ export const SHORT = {
   afk: 'Tandai kamu AFK', catatan: 'Catatan grup', rules: 'Aturan grup', warn: 'Peringatan anggota', cekwarn: 'Cek peringatan',
   tagadmin: 'Panggil admin', sapa: 'Sapaan otomatis',
   attp: 'Stiker teks warna-warni', stikerwm: 'Ganti nama paket stiker',
+  antihapus: 'Teruskan pesan ditarik', antisekali: 'Teruskan media sekali lihat',
+  daily: 'Koin harian', saldo: 'Koin, level, XP', judi: 'Taruhan koin', transfer: 'Kirim koin', toko: 'Toko koin',
   stat: 'Statistik bot', broadcast: 'Pesan ke semua grup', ban: 'Blokir nomor', unban: 'Buka blokir', banlist: 'Daftar diblokir',
 };
 

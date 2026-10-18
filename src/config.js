@@ -23,8 +23,8 @@ export const config = {
   geminiKey: process.env.GEMINI_API_KEY || '',
   geminiModel: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
 
-  // Opsional: kunci FastSaver (https://fastsaver.io). Kalau diisi, .video/.mp3 memakai FastSaver dulu, yt-dlp jadi cadangan.
-  fastsaverKey: process.env.FASTSAVER_KEY || '',
+  // Cadangan downloader: kalau yt-dlp gagal, buka halaman di browser (Playwright) dan tangkap URL videonya. SNIFF=0 untuk mematikan.
+  sniffEnabled: process.env.SNIFF !== '0',
 
   // Opsional: token Replicate untuk .remini berkualitas AI (Real-ESRGAN). Kosong = penajaman lokal sederhana.
   replicateToken: process.env.REPLICATE_API_TOKEN || '',

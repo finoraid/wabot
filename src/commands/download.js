@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { config } from '../config.js';
@@ -56,8 +56,9 @@ async function ytdlp(dir, input, mode) {
     if (/Private video|login required|members-only|This video is private/i.test(err)) {
       throw new UserError('Konten ini privat atau butuh login.');
     }
-    if (/Unsupported URL/i.test(err)) throw new UserError('Situs/tautan ini belum didukung.');
-    throw new UserError('Gagal mengunduh. Tautan mungkin tidak valid atau situs memblokir server.');
+    const fail = new UserError(/Unsupported URL/i.test(err) ? 'Situs/tautan ini belum didukung.' : 'Gagal mengunduh. Tautan mungkin tidak valid atau situs memblokir server.');
+    fail.canSniff = true; // layak dicoba lewat deteksi browser
+    throw fail;
   }
 
   const names = await fs.readdir(dir);
@@ -73,34 +74,14 @@ async function ytdlp(dir, input, mode) {
 }
 
 
-// ---- FastSaver (opsional, sama seperti media_bot): dipakai dulu kalau FASTSAVER_KEY diisi ----
-const FS_BASE = 'https://api.fastsaver.io/v1';
-const isYoutube = (u) => /^(https?:\/\/)?([\w-]+\.)?(youtube\.com|youtu\.be|youtube-nocookie\.com)\//i.test(u);
-
-async function fsCall(pathname, { method = 'GET', body, query } = {}) {
-  const url = `${FS_BASE}${pathname}${query ? `?${new URLSearchParams(query)}` : ''}`;
-  const res = await fetch(url, {
-    method,
-    headers: { 'X-Api-Key': config.fastsaverKey, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(60_000),
-  });
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !data || data.ok === false) {
-    throw new Error(`FastSaver HTTP ${res.status}: ${data?.detail || data?.message || 'tanpa pesan'}`);
-  }
-  return data;
-}
-
-async function fetchToFile(url, dest) {
-  const res = await fetch(url, { signal: AbortSignal.timeout(180_000) });
-  if (!res.ok || !res.body) throw new Error(`unduh file HTTP ${res.status}`);
-  const ct = String(res.headers.get('content-type') || '').toLowerCase();
-  if (ct.includes('text/html') || ct.includes('application/json')) throw new Error('URL hasil bukan file media');
-  const len = Number(res.headers.get('content-length') || 0);
-  if (len > config.maxMediaMB * 1024 * 1024) throw new UserError(`File ${formatBytes(len)} melebihi batas ${config.maxMediaMB} MB.`);
-  await pipeline(Readable.fromWeb(res.body), createWriteStream(dest));
-}
+// ---- Cadangan: deteksi video lewat browser (Playwright) untuk situs yang tidak didukung yt-dlp ----
+// Alur sama seperti botdownloader: yt-dlp dulu -> kalau gagal, buka halaman, putar video, tangkap URL video
+// dari lalu lintas jaringan -> unduh langsung (mp4/webm) atau lewat ffmpeg (m3u8/HLS).
+const UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36';
+const VIDEO_URL_RE = /\.(mp4|webm|m3u8|mov)(\?|$)/i;
+const SEGMENT_RE = /\.(ts|m4s|aac)(\?|$)/i;
+const SNIFF_SECONDS = 15;
+let sniffing = 0; // browser berat: satu deteksi dalam satu waktu
 
 async function toMp3(dir, input) {
   const out = path.join(dir, 'audio.mp3');
@@ -108,53 +89,185 @@ async function toMp3(dir, input) {
   return out;
 }
 
-async function fastsaver(dir, input, mode) {
-  let title = '';
-  let dlUrl;
-  let musicUrl = null;
-  if (isYoutube(input)) {
-    const info = await fsCall('/youtube/info', { query: { url: input } });
-    title = info.title || info.data?.title || '';
-    const formats = info.formats || info.data?.formats || [];
-    let format = 'audio';
-    if (mode === 'video') {
-      const score = (x) => Number(String(x?.quality || x?.format || '').match(/(\d{3,4})p/i)?.[1] || 0);
-      const vids = formats.filter((x) => String(x?.format || x?.type || '').toLowerCase() !== 'audio' && score(x) > 0 && score(x) <= 720);
-      const best = vids.sort((a, b) => score(b) - score(a))[0];
-      format = best?.format || best?.itag || '720p';
+/** fetch yang memeriksa tiap lompatan redirect (cegah redirect ke alamat privat). */
+async function safeFetch(url, headers) {
+  let cur = url;
+  const origin = new URL(url).host;
+  for (let i = 0; i < 5; i++) {
+    await assertPublicUrl(cur);
+    const h = { ...headers };
+    if (new URL(cur).host !== origin) delete h.Cookie;
+    const res = await fetch(cur, { headers: h, redirect: 'manual', signal: AbortSignal.timeout(180_000) });
+    const loc = res.headers.get('location');
+    if (res.status >= 300 && res.status < 400 && loc) {
+      cur = new URL(loc, cur).toString();
+      continue;
     }
-    const d = await fsCall('/youtube/download', { method: 'POST', body: { url: input, format } });
-    dlUrl = d.download_url;
-  } else {
-    const d = await fsCall('/fetch', { query: { url: input } });
-    title = d.title || d.caption || d.description || '';
-    dlUrl = d.download_url || d.url;
-    musicUrl = d.music_url || d.audio_url || null;
+    return res;
   }
-  if (!dlUrl && !(mode === 'audio' && musicUrl)) throw new Error('FastSaver tidak memberi link unduhan');
+  throw new Error('terlalu banyak redirect');
+}
 
-  if (mode === 'audio') {
-    const src = path.join(dir, 'src.bin');
-    await fetchToFile(musicUrl || dlUrl, src);
-    return { file: await toMp3(dir, src), title };
+async function downloadDirect(url, headers, dest) {
+  const res = await safeFetch(url, headers);
+  if (!res.ok || !res.body) throw new Error(`unduh file HTTP ${res.status}`);
+  const ct = String(res.headers.get('content-type') || '').toLowerCase();
+  if (ct.includes('text/html') || ct.includes('application/json')) throw new Error('URL hasil bukan file media');
+  const max = config.maxMediaMB * 1024 * 1024;
+  const len = Number(res.headers.get('content-length') || 0);
+  if (len > max) throw new UserError(`File ${formatBytes(len)} melebihi batas ${config.maxMediaMB} MB.`);
+  let size = 0;
+  const limiter = new Transform({
+    transform(chunk, _enc, cb) {
+      size += chunk.length;
+      if (size > max) return cb(new UserError(`File melebihi batas ${config.maxMediaMB} MB.`));
+      cb(null, chunk);
+    },
+  });
+  await pipeline(Readable.fromWeb(res.body), limiter, createWriteStream(dest));
+  return ct;
+}
+
+async function downloadHls(url, headers, dest) {
+  const headerStr = Object.entries(headers)
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k}: ${String(v).replace(/[\r\n]+/g, ' ')}\r\n`)
+    .join('');
+  await run(
+    'ffmpeg',
+    [
+      '-y', '-loglevel', 'error',
+      '-protocol_whitelist', 'http,https,tcp,tls,crypto', // playlist jahat tidak boleh membaca file lokal
+      '-headers', headerStr,
+      '-i', url,
+      '-c', 'copy', '-bsf:a', 'aac_adtstoasc',
+      '-fs', String(config.maxMediaMB * 1024 * 1024),
+      dest,
+    ],
+    { timeout: 600_000 },
+  );
+}
+
+/** Pastikan hasilnya mp4 yang bisa diputar WhatsApp (webm/mov dikonversi). */
+async function ensureMp4(dir, file, hint) {
+  if (/mp4/i.test(hint)) return file;
+  const out = path.join(dir, 'converted.mp4');
+  await run(
+    'ffmpeg',
+    ['-y', '-loglevel', 'error', '-i', file, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-c:a', 'aac', '-movflags', '+faststart', out],
+    { timeout: 300_000 },
+  );
+  return out;
+}
+
+async function sniffVideo(url) {
+  let chromium;
+  try {
+    ({ chromium } = await import('playwright-core'));
+  } catch {
+    throw new Error('playwright-core belum terpasang');
   }
-  const file = path.join(dir, 'video.mp4');
-  await fetchToFile(dlUrl, file);
-  return { file, title };
+  const found = [];
+  const hostCache = new Map();
+  const hostOk = (u) => {
+    let origin;
+    try {
+      origin = new URL(u).origin;
+    } catch {
+      return Promise.resolve(false);
+    }
+    if (!hostCache.has(origin)) hostCache.set(origin, assertPublicUrl(origin).then(() => true, () => false));
+    return hostCache.get(origin);
+  };
+
+  const browser = await chromium.launch({
+    args: ['--no-sandbox', '--disable-dev-shm-usage'],
+    ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}), // opsional: pakai Chromium yang sudah ada
+  });
+  try {
+    const ctx = await browser.newContext({ userAgent: UA, viewport: { width: 412, height: 915 } });
+    // Tidak boleh menyentuh jaringan internal, dan gambar/font tidak perlu (hemat memori & waktu).
+    await ctx.route('**/*', async (route) => {
+      const req = route.request();
+      const u = req.url();
+      if (!/^https?:/i.test(u)) return route.continue();
+      if (['image', 'font'].includes(req.resourceType())) return route.abort();
+      return (await hostOk(u)) ? route.continue() : route.abort();
+    });
+    const page = await ctx.newPage();
+    page.on('response', (resp) => {
+      const u = resp.url();
+      const ct = String(resp.headers()['content-type'] || '').toLowerCase();
+      if (SEGMENT_RE.test(u)) return;
+      if ((VIDEO_URL_RE.test(u) || ct.startsWith('video/') || ct.includes('mpegurl')) && !found.includes(u)) found.push(u);
+    });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 }).catch(() => {});
+
+    const playJs = "document.querySelectorAll('video').forEach(v=>{v.muted=true;v.play().catch(()=>{})})";
+    for (let i = 0; i < SNIFF_SECONDS && !found.length; i++) {
+      await page.evaluate(playJs).catch(() => {});
+      await page.mouse.click(206, 450).catch(() => {});
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    if (!found.length) {
+      const srcs = await page
+        .evaluate("[...document.querySelectorAll('video,source')].map(e=>e.currentSrc||e.src).filter(Boolean)")
+        .catch(() => []);
+      found.push(...srcs.filter((s) => /^https?:/i.test(s)));
+    }
+    if (!found.length) throw new Error('tidak ada video terdeteksi di halaman');
+
+    found.sort((a, b) => (/\.m3u8/i.test(a) ? 1 : 0) - (/\.m3u8/i.test(b) ? 1 : 0)); // mp4/webm langsung dulu, HLS belakangan
+    const cookies = await ctx.cookies();
+    const title = (await page.title().catch(() => '')) || '';
+    return {
+      videoUrl: found[0],
+      title: title.trim(),
+      headers: { 'User-Agent': UA, Referer: url, Cookie: cookies.map((c) => `${c.name}=${c.value}`).join('; ') },
+    };
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
+async function sniffDownload(dir, input, mode) {
+  if (!config.sniffEnabled) throw new Error('sniff dimatikan');
+  if (sniffing) throw new UserError('Pendeteksi video sedang dipakai orang lain. Coba lagi sebentar.');
+  sniffing++;
+  try {
+    const { videoUrl, headers, title } = await sniffVideo(input);
+    await assertPublicUrl(videoUrl);
+    console.log('[sniff] terdeteksi:', videoUrl.slice(0, 160));
+    const raw = path.join(dir, 'sniffed.bin');
+    let hint = 'mp4';
+    if (/\.m3u8(\?|$)/i.test(videoUrl)) {
+      await downloadHls(videoUrl, headers, raw);
+    } else {
+      const ct = await downloadDirect(videoUrl, headers, raw);
+      hint = `${ct} ${new URL(videoUrl).pathname}`;
+    }
+    if (mode === 'audio') return { file: await toMp3(dir, raw), title };
+    return { file: await ensureMp4(dir, raw, hint), title };
+  } finally {
+    sniffing--;
+  }
 }
 
 async function getMedia(dir, input, mode) {
-  if (config.fastsaverKey && !input.startsWith('ytsearch')) {
+  try {
+    return await ytdlp(dir, input, mode);
+  } catch (e) {
+    if (!e.canSniff || input.startsWith('ytsearch')) throw e;
+    console.error('[download] yt-dlp gagal, coba deteksi lewat browser:', input.slice(0, 120));
+    for (const n of await fs.readdir(dir).catch(() => [])) await fs.rm(path.join(dir, n), { recursive: true, force: true });
     try {
-      return await fastsaver(dir, input, mode);
-    } catch (e) {
-      if (e instanceof UserError) throw e;
-      console.error('[fastsaver]', e.message, '-> fallback yt-dlp');
-      // bersihkan sisa file sebelum yt-dlp
-      for (const n of await fs.readdir(dir).catch(() => [])) await fs.rm(path.join(dir, n), { force: true });
+      return await sniffDownload(dir, input, mode);
+    } catch (e2) {
+      if (e2 instanceof UserError) throw e2;
+      console.error('[sniff]', e2.message);
+      throw new UserError('Video tidak ditemukan di tautan ini (mungkin DRM, butuh login, atau situsnya memblokir server).');
     }
   }
-  return ytdlp(dir, input, mode);
 }
 
 async function sendResult({ sock, jid, msg }, { file, title }, mode) {
@@ -189,6 +302,8 @@ async function handle(ctx, input, mode) {
     release(user);
   }
 }
+
+export const _sniffVideo = sniffVideo;
 
 export default [
   {

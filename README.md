@@ -17,7 +17,7 @@ Prefix default `.` (ubah lewat env `PREFIX`).
 | `.toimg` `.tovideo` | reply stiker → gambar / video (stiker animasi) |
 | `.removebg [stiker]` | hapus latar gambar (model lokal, tanpa API key); hasil PNG transparan |
 | `.remini` | perjelas & perbesar foto (AI bila `REPLICATE_API_TOKEN` diisi, kalau tidak penajaman sederhana) |
-| `.video <link>` `.mp3 <link>` | unduh video / audio dari link |
+| `.video <link>` `.mp3 <link>` | unduh video / audio dari link. Urutan: yt-dlp dulu; kalau situsnya tidak didukung, bot membuka halaman di browser (Playwright), memutar video, menangkap URL-nya (mp4/webm/HLS) lalu mengunduhnya |
 | `.tt` `.ttmp3` `.ig` | pintasan TikTok (video / MP3) dan Instagram |
 | `.play <judul>` | cari lagu di YouTube, kirim MP3 |
 | `.ai <pertanyaan>` | tanya Gemini (bisa kirim/reply gambar), `.resetai` hapus ingatan |
@@ -32,7 +32,10 @@ Prefix default `.` (ubah lewat env `PREFIX`).
 | `.antitoxic on/off` | hapus kata kasar + peringatan; 3x → kick. Tambah kata lewat env `TOXIC_WORDS` |
 | `.welcome on/off` | sambutan anggota baru / keluar |
 | `.botoff` `.boton` | matikan/nyalakan bot untuk anggota biasa di grup (admin tetap bisa) |
-| `.rank` | 10 anggota paling aktif (hitung pesan sejak bot aktif), `.rank reset` (admin) |
+| `.rank` | 10 anggota paling aktif (pesan, level, XP), `.rank reset` (admin) |
+| `.daily` `.saldo` `.judi <jumlah\|all>` `.transfer @user <jumlah>` `.toko` | ekonomi virtual: koin harian + streak, dompet/level/XP (`.saldo [@user]`), taruhan (menang x2, jackpot x5), kirim koin (biaya 5%), toko (jimat hoki, booster XP, gelar). XP didapat dari mengobrol di grup, naik level dapat bonus koin |
+| `.antihapus on\|owner\|off` | (admin) pesan yang ditarik ("hapus untuk semua") dikirim ulang ke grup atau pribadi ke owner |
+| `.antisekali on\|owner\|off` | (admin) foto/video/voice "sekali lihat" diunduh dan dikirim ulang sebagai media biasa |
 | `.poll Judul \| A \| B`, `.vote <no>` | pemungutan suara; `.poll hasil`, `.poll selesai` |
 | `.absen mulai <judul>`, `.absen` | daftar hadir; `.absen list`, `.absen selesai` |
 | `.quotes` `.fakta` `.slot` `.suit` `.jodoh` `.rate` | hiburan ringan (jodoh & rate hanya iseng) |
@@ -67,7 +70,7 @@ Menambah perintah baru: buat file di `src/commands/` yang mengekspor `{ name, al
    - `OWNER_NUMBERS` — nomor owner (boleh beberapa, pisah koma)
    - `GEMINI_API_KEY` — dari [Google AI Studio](https://aistudio.google.com/apikey)
    - `DATA_DIR` = `/data`
-   - opsional: `GEMINI_TTS_MODEL` / `GEMINI_TTS_VOICE` (untuk `.tts`), `TIMEZONE` (sapaan, default Asia/Jakarta), `MENU_IMAGE_URL` (foto header `.menu`, tautan https; kosong = banner bawaan), `REPLICATE_API_TOKEN` (`.remini` AI), `TOXIC_WORDS`, `PREFIX`, `BOT_NAME`, `GEMINI_MODEL` (default `gemini-3.6-flash`), `FASTSAVER_KEY` (downloader lebih andal untuk YouTube; yt-dlp jadi cadangan)
+   - opsional: `GEMINI_TTS_MODEL` / `GEMINI_TTS_VOICE` (untuk `.tts`), `TIMEZONE` (sapaan, default Asia/Jakarta), `MENU_IMAGE_URL` (foto header `.menu`, tautan https; kosong = banner bawaan), `REPLICATE_API_TOKEN` (`.remini` AI), `TOXIC_WORDS`, `PREFIX`, `BOT_NAME`, `GEMINI_MODEL` (default `gemini-3.6-flash`), `SNIFF` (`0` = matikan cadangan deteksi video via browser)
 5. Deploy. Buka `https://<domain-railway-kamu>/qr?key=<QR_KEY>` di browser.
 6. Di HP nomor bot: **WhatsApp → Perangkat tertaut → Tautkan perangkat**, scan QR di halaman itu.
 7. Halaman berubah jadi **"Sudah terhubung"** dan log menampilkan `✅ Terhubung`. Kirim `.menu` ke nomor bot.
@@ -144,3 +147,9 @@ Tes mandiri tanpa WhatsApp: `npm run check` (tidak menguji koneksi/pairing asli 
 - `.tts` memakai Gemini TTS (Interactions API). Kalau Google mengganti nama model, ubah `GEMINI_TTS_MODEL`. Gratis di free tier Gemini, tapi data free tier dipakai Google untuk meningkatkan produk.
 - `.broadcast` memberi jeda 4 detik antar grup; pesan massal tetap berisiko untuk nomor bot, pakai seperlunya.
 - Poll, absen, kuis, AFK hanya di memori (hilang saat bot restart). Catatan, aturan, peringatan, skor, peringkat, statistik, pengingat, dan daftar blokir tersimpan di Volume `/data`.
+
+## Downloader, ekonomi, anti-hapus (v1.2)
+
+- **Downloader** tidak lagi memakai FastSaver. Alurnya mengikuti `botdownloader`: yt-dlp, lalu cadangan deteksi video lewat browser. Cadangan itu memakai `playwright-core` + Chromium (dipasang `Dockerfile`, menambah ±400 MB image dan memori saat dipakai; hanya satu deteksi berjalan sekali waktu). Matikan dengan `SNIFF=0`. Tanpa Chromium, bot tetap jalan dan hanya memakai yt-dlp. Untuk memakai Chromium yang sudah ada: `CHROMIUM_PATH=/path/chrome`. Video yang DRM, butuh login, atau YouTube yang meminta verifikasi tetap tidak bisa diunduh.
+- **Ekonomi**: dompet berlaku di semua grup, tersimpan di `settings.json` (Volume `/data`). Satu dompet per ID pengirim; kalau WhatsApp memberi ID berbeda untuk chat pribadi dan grup, dompetnya terpisah.
+- **Anti-hapus / anti-sekali-lihat** hanya bekerja di grup, hanya untuk pesan yang masuk saat bot aktif (pesan disimpan di memori maksimal 2 jam, media ≤ 8 MB). Pesan yang dihapus admin dari anggota lain, penghapusan oleh bot sendiri, dan kata kasar/link yang sedang diberantas antitoxic/antilink tidak dikirim ulang ke grup. Beri tahu anggota grup kalau fitur ini aktif, terutama mode `owner`, karena isi pribadi mereka diteruskan.

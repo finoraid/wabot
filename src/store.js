@@ -3,7 +3,7 @@ import path from 'node:path';
 import { config } from './config.js';
 
 // Penyimpanan pengaturan per-grup sederhana (JSON) di DATA_DIR.
-let data = { groups: {}, global: {}, reminders: [], rank: {}, scores: {}, stats: { since: Date.now(), cmds: {}, users: {} } };
+let data = { groups: {}, global: {}, reminders: [], rank: {}, scores: {}, eco: {}, stats: { since: Date.now(), cmds: {}, users: {} } };
 
 try {
   fs.mkdirSync(config.dataDir, { recursive: true });
@@ -31,7 +31,7 @@ function scheduleSave() {
   }, 500);
 }
 
-const defaults = () => ({ antilink: false, welcome: false, antispam: false, antitoxic: false, muted: false, sapa: false, rules: '', notes: {}, warns: {} });
+const defaults = () => ({ antilink: false, welcome: false, antispam: false, antitoxic: false, muted: false, sapa: false, rules: '', notes: {}, warns: {}, antihapus: '', antisekali: '' });
 
 export function getGroup(jid) {
   return { ...defaults(), ...(data.groups[jid] || {}) };
@@ -108,6 +108,20 @@ export function recordUse(cmdName, who) {
   scheduleSave();
 }
 export const getStats = () => data.stats || { since: Date.now(), cmds: {}, users: {} };
+
+// ---- ekonomi virtual (.daily .saldo .judi .transfer .toko): satu dompet per pengguna, berlaku di semua grup ----
+const ecoDefaults = () => ({ bal: 0, xp: 0, lastDaily: 0, streak: 0, lastXp: 0, boostUntil: 0, charm: 0, title: '', lastBet: 0 });
+export const getUser = (id) => ({ ...ecoDefaults(), ...(data.eco[id] || {}) });
+export const allUsers = () => data.eco;
+
+/** Ubah data pengguna secara sinkron (aman dari balapan karena tidak ada await di antaranya). */
+export function updateUser(id, fn) {
+  const u = getUser(id);
+  const r = fn(u);
+  data.eco[id] = u;
+  scheduleSave();
+  return r === undefined ? u : r;
+}
 
 export function flushStore() {
   if (timer) {

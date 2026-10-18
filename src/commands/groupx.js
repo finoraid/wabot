@@ -1,4 +1,5 @@
-import { getGroup, getRank, resetRank, updateGroup } from '../store.js';
+import { levelOf } from '../economy.js';
+import { getGroup, getRank, getUser, resetRank, updateGroup } from '../store.js';
 import { num, UserError } from '../utils.js';
 
 const base = { category: 'Grup', group: true };
@@ -78,7 +79,7 @@ export default [
     name: 'rank',
     aliases: ['top', 'aktif'],
     usage: '[reset]',
-    desc: 'Peringkat 10 anggota paling aktif (jumlah pesan)',
+    desc: 'Peringkat 10 anggota paling aktif (pesan, level, XP)',
     async run({ sock, jid, args, reply, isAdmin, isOwner }) {
       if ((args[0] || '').toLowerCase() === 'reset') {
         if (!(isAdmin || isOwner)) throw new UserError('Reset peringkat khusus admin grup.');
@@ -88,7 +89,10 @@ export default [
       const top = Object.entries(getRank(jid)).sort((a, b) => b[1] - a[1]).slice(0, 10);
       if (!top.length) return reply('Belum ada data. Peringkat dihitung dari pesan sejak bot aktif.');
       const medal = ['🥇', '🥈', '🥉'];
-      const lines = top.map(([who, n], i) => `${medal[i] || `${i + 1}.`} @${num(who)} — ${n} pesan`);
+      const lines = top.map(([who, n], i) => {
+        const u = getUser(num(who));
+        return `${medal[i] || `${i + 1}.`} @${num(who)}${u.title ? ` ${u.title}` : ''} — ${n} pesan • Lv ${levelOf(u.xp)} (${u.xp} XP)`;
+      });
       await sock.sendMessage(jid, { text: `🏆 *Anggota paling aktif*\n\n${lines.join('\n')}`, mentions: top.map(([w]) => w) });
     },
   },
