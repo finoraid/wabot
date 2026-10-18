@@ -9,6 +9,56 @@ import { assertPublicUrl, formatBytes, isUrl, run, UserError, withTmp } from '..
 const WA_VIDEO_LIMIT = 16 * 1024 * 1024; // di atas ini dikirim sebagai dokumen
 const SKIP_EXT = /\.(txt|part|ytdl|json|jpg|jpeg|png|webp|vtt|srt)$/i;
 
+
+// FastSaver API: satu endpoint untuk TikTok, Instagram, Facebook, X, Pinterest, Rutube, dan Likee.
+async function fastSaverFetch(input) {
+  const key = process.env.FASTSAVER_KEY;
+  if (!key || /^ytsearch/i.test(input)) return null;
+  let host;
+  try { host = new URL(input).hostname.toLowerCase(); } catch { return null; }
+  // YouTube memakai endpoint format tersendiri; biarkan jalur yt-dlp yang sudah ada menanganinya.
+  if (/youtube\.com$|youtu\.be$|youtube-nocookie\.com$/.test(host)) return null;
+  const supported = /(^|\.)(tiktok\.com|instagram\.com|facebook\.com|fb\.watch|x\.com|twitter\.com|pinterest\.com|pin\.it|rutube\.ru|likee\.video|likee\.com)$/i;
+  if (!supported.test(host)) return null;
+  const endpoint = `https://api.fastsaver.io/v1/fetch?url=${encodeURIComponent(input)}`;
+  const res = await fetch(endpoint, { headers: { 'X-Api-Key': key }, signal: AbortSignal.timeout(45_000) });
+  let data;
+  try { data = await res.json(); } catch { throw new UserError('FastSaver mengirim respons yang tidak valid.'); }
+  if (!res.ok || !data?.ok) {
+    const detail = String(data?.detail || `HTTP ${res.status}`);
+    if (res.status === 401) throw new UserError('FASTSAVER_KEY ditolak. Periksa API key di Railway Variables.');
+    if (res.status === 429) throw new UserError('FastSaver sedang membatasi permintaan. Coba lagi sebentar.');
+    if (/credit/i.test(detail)) throw new UserError('Kredit FastSaver habis. Periksa saldo API FastSaver.');
+    throw new UserError(`FastSaver tidak bisa mengambil media ini (${detail}). Link mungkin privat, sudah dihapus, atau tidak didukung.`);
+  }
+  return data;
+}
+
+async function sendFastSaverResult(ctx, data, mode) {
+  const { sock, jid, msg, react } = ctx;
+  const label = String(data.caption || data.source || 'FastSaver').slice(0, 180);
+  if (mode === 'audio') {
+    const audioUrl = data.music_url || data.download_url;
+    if (!audioUrl) throw new UserError('Audio tidak tersedia untuk tautan ini.');
+    await assertPublicUrl(audioUrl);
+    await sock.sendMessage(jid, { audio: { url: audioUrl }, mimetype: /\.mp3(?:\?|$)/i.test(audioUrl) ? 'audio/mpeg' : 'audio/mp4', fileName: 'media-audio' }, { quoted: msg });
+    return;
+  }
+  const items = Array.isArray(data.items) && data.items.length ? data.items : [{ type: data.type, download_url: data.download_url }];
+  if (!items[0]?.download_url) throw new UserError('FastSaver tidak mengembalikan tautan file media.');
+  // Batasi album agar bot tidak membanjiri grup.
+  for (const [i, item] of items.slice(0, 10).entries()) {
+    if (!item?.download_url) continue;
+    await assertPublicUrl(item.download_url);
+    const type = String(item.type || data.type || 'video').toLowerCase();
+    const caption = `${type === 'image' ? '🖼️' : '✅'} ${label}${items.length > 1 ? ` (${i + 1}/${Math.min(items.length, 10)})` : ''}`;
+    if (type === 'image') await sock.sendMessage(jid, { image: { url: item.download_url }, caption }, { quoted: msg });
+    else if (type === 'video' || /video/i.test(type)) await sock.sendMessage(jid, { video: { url: item.download_url }, caption }, { quoted: msg });
+    else await sock.sendMessage(jid, { document: { url: item.download_url }, fileName: `media-${i + 1}`, caption }, { quoted: msg });
+  }
+  if (items.length > 10) await sock.sendMessage(jid, { text: `ℹ️ Album berisi ${items.length} item; 10 item pertama dikirim agar grup tidak dibanjiri pesan.` }, { quoted: msg });
+}
+
 // ---- batas penggunaan: N unduhan bersamaan, 1 per pengguna ----
 let active = 0;
 const busyUsers = new Set();
@@ -291,7 +341,20 @@ async function handle(ctx, input, mode) {
   await acquire(user);
   try {
     await ctx.react('⏳');
+    let usedFastSaver = false;
     const result = await withTmp(async (dir) => {
+      try {
+        const data = await fastSaverFetch(input);
+        if (data) {
+          await sendFastSaverResult(ctx, data, mode);
+          usedFastSaver = true;
+          return data;
+        }
+      } catch (e) {
+        // Bila API key tersedia dan host didukung, tampilkan error API secara jelas;
+        // jangan diam-diam menghabiskan resource lewat browser fallback.
+        if (process.env.FASTSAVER_KEY && !/^ytsearch/i.test(input)) throw e;
+      }
       const r = await getMedia(dir, input, mode);
       await sendResult(ctx, r, mode);
       return r;
@@ -307,11 +370,24 @@ export const _sniffVideo = sniffVideo;
 
 export default [
   {
+    name: 'media',
+    aliases: ['med', 'downloader'],
+    usage: '<link>',
+    category: 'Media',
+    desc: 'Unduh media dari TikTok, Instagram, Facebook, X, Pinterest, dan situs yang didukung',
+    async run(ctx) {
+      const url = ctx.args[0];
+      if (!isUrl(url)) throw new UserError(`Contoh: ${ctx.prefix}media https://...`);
+      await assertPublicUrl(url);
+      await handle(ctx, url, 'video');
+    },
+  },
+  {
     name: 'video',
     aliases: ['dl', 'mp4', 'ytmp4'],
     usage: '<link>',
     category: 'Media',
-    desc: 'Unduh video dari link (YouTube, TikTok, IG, dll)',
+    desc: 'Unduh video; FastSaver dipakai lebih dulu untuk platform yang didukung',
     async run(ctx) {
       const url = ctx.args[0];
       if (!isUrl(url)) throw new UserError(`Contoh: ${ctx.prefix}video https://...`);

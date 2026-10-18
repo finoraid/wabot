@@ -8,7 +8,7 @@ export const SHORT = {
   menu: 'Daftar semua fitur dan kategori', gamehub: 'Pusat semua game multiplayer', quizbattle: 'Kuis kompetitif antaranggota', clan: 'Clan dan kompetisi antaranggota', market: 'Simulasi pasar aset virtual', stock: 'Simulasi pasar aset virtual', impostor: 'Game sosial mencari impostor', uno: 'Game kartu UNO multiplayer', battle: 'Duel karakter antaranggota', truth: 'Pertanyaan Truth untuk grup', dare: 'Tantangan Dare untuk grup', ping: 'Cek bot hidup', owner: 'Kontak owner', remind: 'Pengingat',
   sticker: 'Gambar/video jadi stiker', brat: 'Stiker teks gaya brat', smeme: 'Stiker meme atas/bawah',
   toimg: 'Stiker jadi gambar', tovideo: 'Stiker animasi jadi video', removebg: 'Hapus latar gambar', remini: 'Perjelas foto',
-  video: 'Unduh video dari link', mp3: 'Unduh audio dari link', tt: 'Unduh video TikTok', ttmp3: 'Unduh MP3 TikTok',
+  media: 'Unduh media multi-platform via FastSaver', video: 'Unduh video dari link', mp3: 'Unduh audio dari link', tt: 'Unduh video TikTok', ttmp3: 'Unduh MP3 TikTok',
   ig: 'Unduh video Instagram', play: 'Cari lagu, kirim MP3',
   ai: 'Tanya AI', resetai: 'Hapus ingatan AI', ocr: 'Baca teks dari gambar', translate: 'Terjemahkan teks', ringkas: 'Ringkas pesan/link',
   tagall: 'Mention semua anggota', hidetag: 'Mention tersembunyi', kick: 'Keluarkan anggota', promote: 'Jadikan admin', demote: 'Cabut admin',
