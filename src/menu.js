@@ -5,7 +5,7 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 
 /** Keterangan singkat (1 baris) untuk tiap perintah. */
 export const SHORT = {
-  menu: 'Daftar semua fitur dan kategori', gamehub: 'Pusat semua game multiplayer', impostor: 'Game sosial mencari impostor', uno: 'Game kartu UNO multiplayer', battle: 'Duel karakter antaranggota', truth: 'Pertanyaan Truth untuk grup', dare: 'Tantangan Dare untuk grup', ping: 'Cek bot hidup', owner: 'Kontak owner', remind: 'Pengingat',
+  menu: 'Daftar semua fitur dan kategori', gamehub: 'Pusat semua game multiplayer', quizbattle: 'Kuis kompetitif antaranggota', clan: 'Clan dan kompetisi antaranggota', market: 'Simulasi pasar aset virtual', stock: 'Simulasi pasar aset virtual', impostor: 'Game sosial mencari impostor', uno: 'Game kartu UNO multiplayer', battle: 'Duel karakter antaranggota', truth: 'Pertanyaan Truth untuk grup', dare: 'Tantangan Dare untuk grup', ping: 'Cek bot hidup', owner: 'Kontak owner', remind: 'Pengingat',
   sticker: 'Gambar/video jadi stiker', brat: 'Stiker teks gaya brat', smeme: 'Stiker meme atas/bawah',
   toimg: 'Stiker jadi gambar', tovideo: 'Stiker animasi jadi video', removebg: 'Hapus latar gambar', remini: 'Perjelas foto',
   video: 'Unduh video dari link', mp3: 'Unduh audio dari link', tt: 'Unduh video TikTok', ttmp3: 'Unduh MP3 TikTok',
@@ -31,7 +31,7 @@ export const SHORT = {
 const clip = (s, n) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s);
 export const shortDesc = (c) => SHORT[c.name] || clip(String(c.desc || '').split(/[(.—]/)[0].trim(), 38);
 
-const ICON = { Umum: '✦', Media: '🎨', AI: '🤖', Hiburan: '🎮', Alat: '🧰', Grup: '👥', Owner: '👑' };
+const ICON = { Game: '🏆', Umum: '✦', Media: '🎨', AI: '🤖', Hiburan: '🎮', Alat: '🧰', Grup: '👥', Owner: '👑' };
 const LINE = '──────────────';
 
 /** Kelompokkan command menurut kategori, berurutan; command owner hanya muncul untuk owner. */
