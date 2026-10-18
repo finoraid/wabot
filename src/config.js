@@ -29,6 +29,13 @@ export const config = {
   // Opsional: token Replicate untuk .remini berkualitas AI (Real-ESRGAN). Kosong = penajaman lokal sederhana.
   replicateToken: process.env.REPLICATE_API_TOKEN || '',
 
+  // Opsional: tautan foto (https) untuk header .menu. Kosong = banner buatan bot sendiri.
+  menuImage: process.env.MENU_IMAGE_URL || '',
+
+  // Suara (.tts): model & suara Gemini TTS
+  geminiTtsModel: process.env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-tts',
+  geminiTtsVoice: process.env.GEMINI_TTS_VOICE || 'Kore',
+
   ytdlpBin: process.env.YTDLP_BIN || 'yt-dlp',
   ytCookies: process.env.YTDLP_COOKIES || '', // path file cookies.txt (opsional)
   maxMediaMB: int(process.env.MAX_MEDIA_MB, 64),

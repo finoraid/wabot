@@ -86,9 +86,10 @@ const reset = () => { sent.length = 0; groupCache.invalidate(GROUP); _resetCoold
 
 reset();
 await handleMessage(sock, mk('6283333333333@s.whatsapp.net', '.menu'));
-assert.match(last().content.text, /\.sticker/);
-assert.match(last().content.text, /\.kick/);
-ok('.menu menampilkan daftar command');
+const menuOut = last().content.caption || last().content.text || '';
+assert.match(menuOut, /\.sticker/);
+assert.match(menuOut, /╭/);
+ok('.menu menampilkan daftar command (foto + teks berkotak, atau teks saja)');
 
 reset();
 await handleMessage(sock, mk('6283333333333@s.whatsapp.net', '.ping'));

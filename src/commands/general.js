@@ -1,33 +1,62 @@
 import os from 'node:os';
+import sharp from 'sharp';
 import { config } from '../config.js';
 import { allCommands } from '../registry.js';
+import { bannerSvg, detailBox, groupCommands, overviewParts } from '../menu.js';
 import { formatUptime } from '../utils.js';
 
-const ORDER = ['Umum', 'Media', 'AI', 'Grup'];
+const ORDER = ['Umum', 'Media', 'AI', 'Hiburan', 'Alat', 'Grup'];
 
 export default [
   {
     name: 'menu',
     aliases: ['help', 'bantuan'],
+    usage: '[kategori]',
     category: 'Umum',
     desc: 'Tampilkan daftar perintah',
-    async run({ reply, prefix }) {
-      const groups = {};
-      for (const c of allCommands()) {
-        if (c.owner) continue;
-        (groups[c.category || 'Umum'] ||= []).push(c);
-      }
-      const cats = [...new Set([...ORDER, ...Object.keys(groups)])].filter((c) => groups[c]);
-      const lines = [`🤖 *${config.botName}*`, `Prefix: *${prefix}*`, ''];
-      for (const cat of cats) {
-        lines.push(`*${cat.toUpperCase()}*`);
-        for (const c of groups[cat]) {
-          const usage = c.usage ? ` ${c.usage}` : '';
-          lines.push(`• ${prefix}${c.name}${usage} — ${c.desc}`);
+    async run({ sock, jid, msg, args, reply, prefix, isOwner }) {
+      const groups = groupCommands(allCommands(), { isOwner, order: ORDER });
+      const name = msg.pushName || '';
+      const ctx = { botName: config.botName, prefix, name, uptime: formatUptime(process.uptime()) };
+      const want = (args[0] || '').toLowerCase();
+
+      // Foto banner: gambar buatan sendiri, atau foto milikmu lewat env MENU_IMAGE_URL.
+      let photo = null;
+      if (config.menuImage) photo = { url: config.menuImage };
+      else {
+        try {
+          const svg = bannerSvg({ botName: config.botName, prefix, categories: groups.map((g) => g.name) });
+          photo = await sharp(Buffer.from(svg)).png().toBuffer();
+        } catch (e) {
+          console.error('[menu] gagal membuat banner, kirim teks saja:', e.message);
         }
-        lines.push('');
       }
-      await reply(lines.join('\n').trim());
+
+      let caption;
+      let follow = '';
+      if (!want) ({ caption, follow } = overviewParts(ctx, groups));
+      else if (want === 'semua' || want === 'all') caption = groups.map((g) => detailBox(g, prefix)).join('\n\n');
+      else {
+        const g = groups.find((x) => x.name.toLowerCase() === want || x.name.toLowerCase().startsWith(want));
+        if (!g) return reply(`Kategori tidak ada. Pilih: ${groups.map((x) => x.name.toLowerCase()).join(', ')}, semua\nContoh: ${prefix}menu media`);
+        caption = detailBox(g, prefix);
+      }
+
+      // Caption foto dibatasi (~1000 huruf); kalau lebih panjang, foto (caption pendek) dan teks dikirim terpisah.
+      if (caption.length > 1000) {
+        follow = caption;
+        caption = `*${config.botName}*  •  menu`;
+      }
+      if (photo) {
+        try {
+          await sock.sendMessage(jid, { image: photo, caption }, { quoted: msg });
+          if (follow) await sock.sendMessage(jid, { text: follow });
+          return;
+        } catch (e) {
+          console.error('[menu] gagal kirim foto:', e.message);
+        }
+      }
+      await reply(follow ? `${caption}\n\n${follow}` : caption);
     },
   },
   {

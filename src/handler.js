@@ -1,9 +1,11 @@
 import { config } from './config.js';
 import { addStrike, clearStrikes, isFlood, isToxic, MAX_STRIKES } from './moderation.js';
-import { countMessage, getGlobal, getGroup } from './store.js';
+import { countMessage, getGlobal, getGroup, recordUse } from './store.js';
 import { getMeta } from './groupCache.js';
 import { findCommand } from './registry.js';
-import { getBody, getContextInfo, num } from './utils.js';
+import { checkAfk } from './afk.js';
+import { handleGameMessage } from './games.js';
+import { getBody, getContextInfo, getQuotedText, num } from './utils.js';
 
 const COOLDOWN_MS = 2000;
 const lastUsed = new Map(); // sender -> timestamp
@@ -136,6 +138,24 @@ export async function handleMessage(sock, msg) {
     }
   }
 
+  // ---- AFK: pengirim yang AFK kembali; orang yang di-tag/di-reply dan sedang AFK diberi tahu ----
+  if (isGroup && !msg.key.fromMe) {
+    const ci = getContextInfo(msg);
+    const isAfkCmd = body.toLowerCase().startsWith(`${config.prefix}afk`);
+    for (const n of checkAfk({ senderIds, senderJid: msg.key.participant || '', mentioned: ci.mentionedJid || [], quotedSender: ci.participant || null, isAfkCommand: isAfkCmd })) {
+      await sock.sendMessage(jid, { text: n.text, mentions: n.mentions || [] }, { quoted: msg }).catch(() => {});
+    }
+  }
+
+  // ---- Permainan (.kuis, .tebakangka): jawaban berupa pesan biasa ----
+  if (!body.startsWith(config.prefix) && !msg.key.fromMe) {
+    const r = handleGameMessage({ jid, who: msg.key.participant || jid, body, isGroup });
+    if (r) {
+      await sock.sendMessage(jid, { text: r.text, mentions: r.mentions }, { quoted: msg }).catch(() => {});
+      return;
+    }
+  }
+
   // ---- Command ----
   if (!body.startsWith(config.prefix)) return;
   const m = body.slice(config.prefix.length).trim().match(/^(\S+)\s*([\s\S]*)$/);
@@ -149,6 +169,7 @@ export async function handleMessage(sock, msg) {
   // Mode privat: hanya owner & nomor yang diizinkan (.allow) yang dilayani. Grup yang di-mute: hanya admin/owner.
   if (!isOwner) {
     const gl = getGlobal();
+    if (gl.banned.some((n) => senderIds.has(n))) return;
     if (gl.mode === 'private' && !gl.allowed.some((n) => senderIds.has(n))) return;
     if (isGroup && getGroup(jid).muted && !isAdmin) return;
   }
@@ -173,11 +194,13 @@ export async function handleMessage(sock, msg) {
     senderIds, args, text, prefix: config.prefix,
     mentioned: ctxInfo.mentionedJid || [],
     quotedSender: ctxInfo.participant || null,
+    pushName: msg.pushName || '', quotedText: getQuotedText(msg),
     reply, react, idsOf, findParticipant: (j) => findParticipant(meta, j),
   };
 
   try {
     await cmd.run(ctx);
+    recordUse(cmd.name, [...senderIds][0] || '');
   } catch (e) {
     if (e.userMessage) console.log(`[cmd:${cmd.name}] ${e.userMessage}`);
     else console.error(`[cmd:${cmd.name}]`, e);

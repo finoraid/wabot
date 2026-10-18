@@ -11,7 +11,7 @@ Prefix default `.` (ubah lewat env `PREFIX`).
 
 | Perintah | Fungsi |
 |---|---|
-| `.menu` `.ping` `.owner` | daftar perintah, cek bot, kontak owner |
+| `.menu` `.ping` `.owner` | menu berfoto + teks berkotak; `.menu media` / `ai` / `grup` / `umum` / `semua` untuk penjelasan tiap perintah; cek bot; kontak owner |
 | `.sticker` (alias `.s`) | kirim/reply gambar, video ≤10 detik, atau GIF |
 | `.brat <teks>` `.smeme atas\|bawah` | stiker teks gaya brat; stiker meme dari gambar |
 | `.toimg` `.tovideo` | reply stiker → gambar / video (stiker animasi) |
@@ -35,6 +35,19 @@ Prefix default `.` (ubah lewat env `PREFIX`).
 | `.rank` | 10 anggota paling aktif (hitung pesan sejak bot aktif), `.rank reset` (admin) |
 | `.poll Judul \| A \| B`, `.vote <no>` | pemungutan suara; `.poll hasil`, `.poll selesai` |
 | `.absen mulai <judul>`, `.absen` | daftar hadir; `.absen list`, `.absen selesai` |
+| `.quotes` `.fakta` `.slot` `.suit` `.jodoh` `.rate` | hiburan ringan (jodoh & rate hanya iseng) |
+| `.kuis` `.tebakangka` `.nyerah` `.skor` | game: jawab langsung di chat, skor per grup (`.skor reset` admin) |
+| `.cuaca <kota>` | cuaca sekarang + 3 hari (Open-Meteo) |
+| `.jadwalsholat <kota>[, negara]` | jadwal sholat hari ini (Aladhan, metode Kemenag untuk Indonesia) |
+| `.kurs [jumlah] <dari> [ke]` | kurs mata uang (Frankfurter/ECB, default ke IDR) |
+| `.hitung <ekspresi>` `.qr <teks>` `.stopwatch` | kalkulator aman, kode QR, stopwatch |
+| `.suara` `.tts <teks>` | pesan suara → teks (reply voice note); teks → pesan suara (Gemini) |
+| `.attp <teks>` `.stikerwm Paket \| Pembuat` | stiker teks warna-warni bergerak; ganti nama paket stiker (reply stiker) |
+| `.afk [alasan]` | tandai AFK; bot memberi tahu yang men-tag kamu |
+| `.catatan` `.rules` | catatan & aturan grup (admin yang mengubah) |
+| `.warn @user [alasan]` `.cekwarn` | peringatan anggota, 3x dikeluarkan (admin) |
+| `.tagadmin` `.sapa on/off` | panggil admin; sapaan otomatis 06.00 & 21.00 (admin) |
+| `.stat` `.broadcast <pesan>` `.ban/.unban/.banlist` (owner) | statistik, pesan ke semua grup (jeda 4 detik/grup), blokir nomor |
 | `.grup buka/tutup` `.linkgc` | atur chat grup, ambil link undangan |
 | `.mode public/private` (owner) | mode privat: hanya owner & nomor yang diizinkan |
 | `.allow add/del/list <nomor>` (owner) | kelola nomor yang diizinkan saat mode privat |
@@ -54,7 +67,7 @@ Menambah perintah baru: buat file di `src/commands/` yang mengekspor `{ name, al
    - `OWNER_NUMBERS` — nomor owner (boleh beberapa, pisah koma)
    - `GEMINI_API_KEY` — dari [Google AI Studio](https://aistudio.google.com/apikey)
    - `DATA_DIR` = `/data`
-   - opsional: `REPLICATE_API_TOKEN` (`.remini` AI), `TOXIC_WORDS`, `PREFIX`, `BOT_NAME`, `GEMINI_MODEL` (default `gemini-3.6-flash`), `FASTSAVER_KEY` (downloader lebih andal untuk YouTube; yt-dlp jadi cadangan)
+   - opsional: `GEMINI_TTS_MODEL` / `GEMINI_TTS_VOICE` (untuk `.tts`), `TIMEZONE` (sapaan, default Asia/Jakarta), `MENU_IMAGE_URL` (foto header `.menu`, tautan https; kosong = banner bawaan), `REPLICATE_API_TOKEN` (`.remini` AI), `TOXIC_WORDS`, `PREFIX`, `BOT_NAME`, `GEMINI_MODEL` (default `gemini-3.6-flash`), `FASTSAVER_KEY` (downloader lebih andal untuk YouTube; yt-dlp jadi cadangan)
 5. Deploy. Buka `https://<domain-railway-kamu>/qr?key=<QR_KEY>` di browser.
 6. Di HP nomor bot: **WhatsApp → Perangkat tertaut → Tautkan perangkat**, scan QR di halaman itu.
 7. Halaman berubah jadi **"Sudah terhubung"** dan log menampilkan `✅ Terhubung`. Kirim `.menu` ke nomor bot.
@@ -127,3 +140,7 @@ Tes mandiri tanpa WhatsApp: `npm run check` (tidak menguji koneksi/pairing asli 
 - `.remini` dengan `REPLICATE_API_TOKEN` memanggil model `nightmareai/real-esrgan` di Replicate (berbayar per pemakaian). Kalau gagal, bot jatuh ke mode lokal.
 - `.brat`/`.smeme` butuh font di server; `Dockerfile` sudah memasang `fonts-dejavu-core` (emoji tidak tampil di stiker teks).
 - Jalankan `npm run check` untuk tes mandiri (tanpa koneksi WhatsApp).
+- Tombol (button) asli WhatsApp tidak dipakai: di Baileys butuh tambalan tidak resmi, sering berhenti tampil, dan berisiko untuk nomor. Sebagai gantinya navigasi lewat `.menu <kategori>`.
+- `.tts` memakai Gemini TTS (Interactions API). Kalau Google mengganti nama model, ubah `GEMINI_TTS_MODEL`. Gratis di free tier Gemini, tapi data free tier dipakai Google untuk meningkatkan produk.
+- `.broadcast` memberi jeda 4 detik antar grup; pesan massal tetap berisiko untuk nomor bot, pakai seperlunya.
+- Poll, absen, kuis, AFK hanya di memori (hilang saat bot restart). Catatan, aturan, peringatan, skor, peringkat, statistik, pengingat, dan daftar blokir tersimpan di Volume `/data`.

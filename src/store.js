@@ -3,7 +3,7 @@ import path from 'node:path';
 import { config } from './config.js';
 
 // Penyimpanan pengaturan per-grup sederhana (JSON) di DATA_DIR.
-let data = { groups: {}, global: {}, reminders: [], rank: {} };
+let data = { groups: {}, global: {}, reminders: [], rank: {}, scores: {}, stats: { since: Date.now(), cmds: {}, users: {} } };
 
 try {
   fs.mkdirSync(config.dataDir, { recursive: true });
@@ -31,11 +31,13 @@ function scheduleSave() {
   }, 500);
 }
 
-const defaults = () => ({ antilink: false, welcome: false, antispam: false, antitoxic: false, muted: false });
+const defaults = () => ({ antilink: false, welcome: false, antispam: false, antitoxic: false, muted: false, sapa: false, rules: '', notes: {}, warns: {} });
 
 export function getGroup(jid) {
   return { ...defaults(), ...(data.groups[jid] || {}) };
 }
+
+export const allGroups = () => Object.entries(data.groups).map(([jid, g]) => [jid, { ...defaults(), ...g }]);
 
 export function updateGroup(jid, patch) {
   data.groups[jid] = { ...getGroup(jid), ...patch };
@@ -44,7 +46,7 @@ export function updateGroup(jid, patch) {
 }
 
 // ---- pengaturan global bot: mode publik/privat + daftar nomor yang diizinkan ----
-const globalDefaults = () => ({ mode: 'public', allowed: [] });
+const globalDefaults = () => ({ mode: 'public', allowed: [], banned: [] });
 
 export function getGlobal() {
   return { ...globalDefaults(), ...(data.global || {}) };
@@ -84,6 +86,28 @@ export function resetRank(groupJid) {
   delete data.rank[groupJid];
   scheduleSave();
 }
+
+// ---- skor game grup (.kuis, .tebakangka) ----
+export function addScore(groupJid, who, pts = 1) {
+  const g = (data.scores[groupJid] ||= {});
+  g[who] = (g[who] || 0) + pts;
+  scheduleSave();
+  return g[who];
+}
+export const getScores = (groupJid) => data.scores[groupJid] || {};
+export function resetScores(groupJid) {
+  delete data.scores[groupJid];
+  scheduleSave();
+}
+
+// ---- statistik pemakaian perintah (.stat, khusus owner) ----
+export function recordUse(cmdName, who) {
+  const st = (data.stats ||= { since: Date.now(), cmds: {}, users: {} });
+  st.cmds[cmdName] = (st.cmds[cmdName] || 0) + 1;
+  if (who) st.users[who] = (st.users[who] || 0) + 1;
+  scheduleSave();
+}
+export const getStats = () => data.stats || { since: Date.now(), cmds: {}, users: {} };
 
 export function flushStore() {
   if (timer) {

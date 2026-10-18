@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { handleMessage } from './handler.js';
 import { invalidate, peek } from './groupCache.js';
 import { loadCommands } from './registry.js';
+import { startGreetings } from './greetings.js';
 import { startReminders } from './reminders.js';
 import { flushStore, getGroup } from './store.js';
 import { num } from './utils.js';
@@ -115,6 +116,7 @@ async function start() {
       setQr(null);
       log(`✅ Terhubung sebagai ${status.number}`);
       startReminders(sock, log);
+      startGreetings(sock, log);
     }
 
     if (connection === 'close') {
