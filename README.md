@@ -153,3 +153,27 @@ Tes mandiri tanpa WhatsApp: `npm run check` (tidak menguji koneksi/pairing asli 
 - **Downloader** tidak lagi memakai FastSaver. Alurnya mengikuti `botdownloader`: yt-dlp, lalu cadangan deteksi video lewat browser. Cadangan itu memakai `playwright-core` + Chromium (dipasang `Dockerfile`, menambah ±400 MB image dan memori saat dipakai; hanya satu deteksi berjalan sekali waktu). Matikan dengan `SNIFF=0`. Tanpa Chromium, bot tetap jalan dan hanya memakai yt-dlp. Untuk memakai Chromium yang sudah ada: `CHROMIUM_PATH=/path/chrome`. Video yang DRM, butuh login, atau YouTube yang meminta verifikasi tetap tidak bisa diunduh.
 - **Ekonomi**: dompet berlaku di semua grup, tersimpan di `settings.json` (Volume `/data`). Satu dompet per ID pengirim; kalau WhatsApp memberi ID berbeda untuk chat pribadi dan grup, dompetnya terpisah.
 - **Anti-hapus / anti-sekali-lihat** hanya bekerja di grup, hanya untuk pesan yang masuk saat bot aktif (pesan disimpan di memori maksimal 2 jam, media ≤ 8 MB). Pesan yang dihapus admin dari anggota lain, penghapusan oleh bot sendiri, dan kata kasar/link yang sedang diberantas antitoxic/antilink tidak dikirim ulang ke grup. Beri tahu anggota grup kalau fitur ini aktif, terutama mode `owner`, karena isi pribadi mereka diteruskan.
+
+## Game Hub Multiplayer (v1.3 test)
+
+Fitur tambahan pada `src/commands/socialgames.js`:
+- `.gamehub` — menu game grup.
+- `.impostor start|join|begin|hint <teks>|vote @orang|end` — social deduction dengan role rahasia lewat DM.
+- `.uno start|join|begin|hand|play <kartu>|draw|end` — UNO mini 2–6 pemain.
+- `.battle @orang` / `.duel @orang` — duel cepat.
+- `.truth` dan `.dare` — party prompts.
+- `.ai <pertanyaan>` — tetap memakai fitur Gemini yang sudah ada.
+
+Catatan tes: lobby dan progres game multiplayer saat ini disimpan di memori proses, sehingga akan reset saat Railway restart/deploy. Untuk Impostor dan UNO, pemain perlu membuka chat pribadi bot agar bot bisa mengirim role/kartu. UNO merupakan versi mini berbasis chat; aturan khusus dan efek kartu masih disederhanakan.
+
+
+## WaBot v1.3 Game Hub
+
+- `.menu` menampilkan kategori dan daftar ringkas seluruh fitur yang terdaftar.
+- `.menu semua` menampilkan perintah lengkap beserta deskripsinya.
+- `.menu game` menampilkan perintah Game Hub.
+- `.gamehub` menampilkan petunjuk permainan multiplayer.
+- Game baru: Impostor, UNO, Battle Arena, Truth, dan Dare.
+- AI ringan tetap memakai command AI yang sudah ada di project.
+
+Catatan: game aktif disimpan di memori proses dan akan reset jika bot restart. Uji di grup kecil sebelum dipakai ramai-ramai.

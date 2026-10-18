@@ -5,7 +5,7 @@ import { allCommands } from '../registry.js';
 import { bannerSvg, detailBox, groupCommands, overviewParts } from '../menu.js';
 import { formatUptime } from '../utils.js';
 
-const ORDER = ['Umum', 'Media', 'AI', 'Hiburan', 'Alat', 'Grup'];
+const ORDER = ['Umum', 'Game', 'Media', 'AI', 'Hiburan', 'Alat', 'Grup', 'Owner'];
 
 export default [
   {
@@ -44,8 +44,9 @@ export default [
 
       // Caption foto dibatasi (~1000 huruf); kalau lebih panjang, foto (caption pendek) dan teks dikirim terpisah.
       if (caption.length > 1000) {
-        follow = caption;
-        caption = `*${config.botName}*  •  menu`;
+        // Pertahankan daftar ringkas semua fitur; tambahkan caption panjang sebagai bagian terpisah.
+        follow = [follow, caption].filter(Boolean).join('\n\n');
+        caption = `*${config.botName}*  •  menu lengkap`;
       }
       if (photo) {
         try {
