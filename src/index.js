@@ -3,6 +3,7 @@ import path from 'node:path';
 import * as baileys from '@whiskeysockets/baileys';
 import { Server as SocketIOServer } from 'socket.io';
 import { attachUno } from './uno/game.js';
+import { attachSnakes } from './uno/snakes.js';
 import pino from 'pino';
 import { attachCompanionRefresh } from './companionRefresh.js';
 import { config } from './config.js';
@@ -30,7 +31,8 @@ const unoHooks = {};
 const httpServer = createWebServer({ qrKey: config.qrKey, startedAt, log, musicDir: path.join(config.dataDir, 'uno-music'), unoHooks });
 const socketIO = new SocketIOServer(httpServer, { serveClient: true, maxHttpBufferSize: 1e6 });
 attachUno(socketIO, unoHooks);
-httpServer.listen(config.port, () => log(`HTTP di port ${config.port} (UNO ARENA: /uno/)`));
+attachSnakes(socketIO);
+httpServer.listen(config.port, () => log(`HTTP di port ${config.port} (UNO ARENA: /uno/, Ular Tangga: /snakes/)`));
 if (config.loginMode === 'qr') {
   log(
     config.qrKey

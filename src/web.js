@@ -81,6 +81,31 @@ export function createWebServer({ qrKey, startedAt = Date.now(), log = console.l
       return;
     }
 
+    // Shared custom sticker assets for UNO and Ular Tangga chat.
+    if (url.pathname.startsWith('/stickers/')) {
+      const relative = decodeURIComponent(url.pathname.slice('/stickers/'.length));
+      const root = path.resolve(process.cwd(), 'public', 'stickers');
+      const file = path.resolve(root, relative);
+      if (file !== root && !file.startsWith(root + path.sep)) { res.writeHead(403).end('Forbidden'); return; }
+      if (path.extname(file).toLowerCase() !== '.svg') { res.writeHead(404).end('Not found'); return; }
+      try { const data = await fs.readFile(file); res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' }); res.end(data); }
+      catch { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Sticker not found'); }
+      return;
+    }
+
+    // Ular Tangga Party board game, served independently from UNO.
+    if (url.pathname === '/snakes') { res.writeHead(302, { Location: '/snakes/' }); res.end(); return; }
+    if (url.pathname.startsWith('/snakes/')) {
+      const relative = decodeURIComponent(url.pathname.slice('/snakes/'.length) || 'index.html');
+      const root = path.resolve(process.cwd(), 'public', 'snakes');
+      const file = path.resolve(root, relative);
+      if (file !== root && !file.startsWith(root + path.sep)) { res.writeHead(403).end('Forbidden'); return; }
+      const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8' };
+      try { const data = await fs.readFile(file); res.writeHead(200, { 'Content-Type': types[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-cache' }); res.end(data); }
+      catch { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('Ular Tangga file not found'); }
+      return;
+    }
+
     // UNO ARENA static site, mounted under /uno without replacing WaBot routes.
     // Redirect only the bare path; never redirect /uno/ to itself.
     if (url.pathname === '/uno') {
