@@ -31,19 +31,7 @@ function mentionsText(jids) { return jids.map(playerTag).join(' '); }
 
 // Membolehkan balasan warna langsung saat pemain sedang memilih warna UNO.
 export function isUnoWaitingColor(jid, sender) { const g = lobbies.get(jid); return !!g && g.type === 'uno' && g.phase === 'playing' && g.pendingColor?.player === sender; }
-
-// Input langsung UNO hanya diterima dari pemain yang sedang mendapat giliran.
-export function getUnoDirectAction(jid, sender, body) {
-  const g = lobbies.get(jid);
-  if (!g || g.type !== 'uno' || g.phase !== 'playing' || g.pendingColor || g.players[g.turn] !== sender) return null;
-  const input = String(body || '').trim().replace(/\s+/g, '').toLowerCase();
-  if (/^(ambil|draw)$/i.test(input)) return 'draw';
-  const hand = g.hands?.[sender] || [];
-  const normalize = (v) => String(v).replace(/\s+/g, '').toLowerCase();
-  const card = hand.find((c) => normalize(c) === input);
-  if (card) return `play ${card}`;
-  return null;
-}
+export function isUnoTurn(jid, sender) { const g = lobbies.get(jid); return !!g && g.type === 'uno' && g.phase === 'playing' && !g.pendingColor && g.players[g.turn] === sender; }
 
 export default [
   {
@@ -126,8 +114,8 @@ export default [
       if (sub === 'begin') {
         if (sender !== g.host) throw new UserError('Hanya host yang bisa memulai.'); if (g.phase !== 'lobby') throw new UserError('UNO sudah dimulai.'); if (g.players.length < 2) throw new UserError('Minimal 2 pemain.');
         const deck = shuffle(COLORS.flatMap((c) => Array.from({length: 10}, (_,i) => `${c}${i}`).concat([`${c}Skip`, `${c}Reverse`, `${c}+2`])) .concat(Array.from({length:4},()=>['🌈Wild','🌈+4']).flat()));
-        g.hands = Object.fromEntries(g.players.map(p => [p, deck.splice(0,7)])); g.deck = deck; g.top = g.deck.pop(); while (g.top.startsWith('🌈')) { g.deck.unshift(g.top); g.top = g.deck.pop(); } g.turn = 0; g.phase = 'playing'; g.pendingColor = null; g.drawPenalty = 0;
-        const failed=[]; for (const p of g.players) { try { await sock.sendMessage(p,{text:`🃏 UNO dimulai!\nKartu kamu: ${g.hands[p].join(' | ')}\nKartu atas: ${g.top}\nDi grup, kirim kartu yang ingin dimainkan persis seperti di tanganmu (contoh 🟢2), atau ketik *ambil*. Untuk melihat kartu lagi: ${prefix}uno hand`}); } catch { failed.push(p); } }
+        g.hands = Object.fromEntries(g.players.map(p => [p, deck.splice(0,7)])); g.deck = deck; g.top = g.deck.pop(); while (g.top.startsWith('🌈')) { g.deck.unshift(g.top); g.top = g.deck.pop(); } g.turn = 0; g.direction = 1; g.phase = 'playing'; g.pendingColor = null; g.drawPenalty = 0;
+        const failed=[]; for (const p of g.players) { try { await sock.sendMessage(p,{text:`🃏 UNO dimulai!\nKartu kamu: ${g.hands[p].join(' | ')}\nKartu atas: ${g.top}\nKirim kartu langsung di grup (contoh 🟢2), atau ketik *ambil*. Kartu juga bisa dimainkan dengan ${prefix}uno play <kartu>.`}); } catch { failed.push(p); } }
         return reply(`🃏 *UNO DIMULAI!*\nKartu atas: ${g.top}\nGiliran: ${playerTag(g.players[g.turn])}\nPemain menerima kartu lewat chat pribadi.`, { mentions: [g.players[g.turn], ...failed] });
       }
       if (g.phase !== 'playing') throw new UserError('UNO belum dimulai.');
@@ -135,12 +123,12 @@ export default [
         if (!g.pendingColor || g.pendingColor.player !== sender) throw new UserError('Kamu tidak sedang memilih warna.');
         const colorMap = { red: '🔴', merah: '🔴', yellow: '🟡', kuning: '🟡', green: '🟢', hijau: '🟢', blue: '🔵', biru: '🔵', '🔴':'🔴', '🟡':'🟡', '🟢':'🟢', '🔵':'🔵' };
         const chosen = colorMap[(args[1] || '').toLowerCase()];
-        if (!chosen) throw new UserError(`Pilih warna: ${prefix}uno color red|yellow|green|blue`);
+        if (!chosen) throw new UserError(`Pilih warna: merah, kuning, hijau, atau biru.`);
         g.top = `${chosen}${g.pendingColor.card === '🌈+4' ? '+4' : 'Wild'}`;
         const wasPlusFour = g.pendingColor.card === '🌈+4';
         g.pendingColor = null;
-        if (wasPlusFour) { const target = g.players[(g.turn + 1) % g.players.length]; for (let i=0;i<4;i++) { if (!g.deck.length) g.deck = shuffle(g.players.flatMap(p => g.hands[p])); const c = g.deck.pop(); if (c) g.hands[target].push(c); } g.turn = (g.turn + 2) % g.players.length; }
-        else g.turn = (g.turn + 1) % g.players.length;
+        if (wasPlusFour) { const target = g.players[(g.turn + g.direction + g.players.length) % g.players.length]; for (let i=0;i<4;i++) { if (!g.deck.length) g.deck = shuffle(g.players.flatMap(p => p === target ? [] : g.hands[p])); const c = g.deck.pop(); if (c) g.hands[target].push(c); } g.turn = (g.turn + 2*g.direction + g.players.length*2) % g.players.length; }
+        else g.turn = (g.turn + g.direction + g.players.length) % g.players.length;
         return sock.sendMessage(jid, { text: `🎨 ${playerTag(sender)} memilih warna ${chosen}${wasPlusFour ? '\n➕4: pemain berikutnya mengambil 4 kartu dan kehilangan giliran.' : ''}\nKartu atas: ${g.top}\nGiliran: ${playerTag(g.players[g.turn])}`, mentions: [sender, g.players[g.turn]] });
       }
       if (sub === 'hand') return sock.sendMessage(sender,{text:`🃏 Kartu kamu:\n${(g.hands[sender]||[]).join(' | ') || '(kosong)'}`});
@@ -153,10 +141,13 @@ export default [
       }
       if (sub === 'play') {
         if (g.players[g.turn] !== sender) throw new UserError(`Belum giliranmu. Giliran ${playerTag(g.players[g.turn])}.`);
-        const card = args.slice(1).join(''); const hand = g.hands[sender]; const actual = hand?.find(c => c.toLowerCase() === card.toLowerCase() || c.replace(/\s/g,'').toLowerCase() === card.replace(/\s/g,'').toLowerCase());
+        const card = args.slice(1).join('').replace(/\s/g, ''); const hand = g.hands[sender]; const actual = hand?.find(c => c.toLowerCase() === card.toLowerCase() || c.replace(/\s/g,'').toLowerCase() === card.toLowerCase());
         if (!actual) throw new UserError(`Kartu tidak ditemukan. Lihat ${prefix}uno hand.`);
         const colorOf = c => COLORS.find(x => c.startsWith(x));
-        if (!(actual.startsWith('🌈') || g.top.startsWith('🌈') || actual === g.top || colorOf(actual) && colorOf(actual) === colorOf(g.top) || /^\d$/.test(actual.replace(/^\D+/,'')) && actual.replace(/^\D+/, '') === g.top.replace(/^\D+/,''))) throw new UserError(`Kartu ${actual} tidak cocok dengan kartu atas ${g.top}.`);
+        const actionOf = c => c.endsWith('+2') ? '+2' : /Skip$/i.test(c) ? 'Skip' : /Reverse$/i.test(c) ? 'Reverse' : c === '🌈Wild' || c.endsWith('Wild') ? 'Wild' : c === '🌈+4' || c.endsWith('+4') ? '+4' : null;
+        const sameAction = actionOf(actual) && actionOf(actual) === actionOf(g.top);
+        const sameNumber = /^\D*\d$/.test(actual) && actual.replace(/^\D+/, '') === g.top.replace(/^\D+/, '');
+        if (!(actual.startsWith('🌈') || g.top.startsWith('🌈') || actual === g.top || (colorOf(actual) && colorOf(actual) === colorOf(g.top)) || sameNumber || sameAction)) throw new UserError(`Kartu ${actual} tidak cocok dengan kartu atas ${g.top}.`);
         hand.splice(hand.indexOf(actual),1);
         if (actual.startsWith('🌈')) {
           g.pendingColor = { player: sender, card: actual };
@@ -171,12 +162,16 @@ export default [
         }
         g.top=actual;
         if (!hand.length) { lobbies.delete(jid); return sock.sendMessage(jid,{text:`🏆 *UNO SELESAI!*\n${playerTag(sender)} menang!`,mentions:[sender]}); }
-        let step = 1; if (/Skip|Reverse/.test(actual)) step = 2; if (actual.endsWith('+2')) { const target = g.players[(g.turn + 1) % g.players.length]; for (let i=0;i<2;i++) { if (!g.deck.length) g.deck = shuffle(g.players.flatMap(p => g.hands[p])); const c = g.deck.pop(); if (c) g.hands[target].push(c); } step = 2; } g.turn=(g.turn+step)%g.players.length;
+        let step = 1;
+        if (/Reverse$/.test(actual)) { g.direction *= -1; if (g.players.length === 2) step = 2; }
+        if (/Skip$/.test(actual)) step = 2;
+        if (actual.endsWith('+2')) { const target = g.players[(g.turn + g.direction + g.players.length) % g.players.length]; for (let i=0;i<2;i++) { if (!g.deck.length) g.deck = shuffle(g.players.flatMap(p => p === target ? [] : g.hands[p])); const c = g.deck.pop(); if (c) g.hands[target].push(c); } step = 2; }
+        g.turn=(g.turn+step*g.direction+g.players.length*2)%g.players.length;
         for (const p of g.players) if (p !== sender) sock.sendMessage(p,{text:`🃏 ${playerTag(sender)} memainkan ${actual}. Kartu atas sekarang ${g.top}. ${playerTag(g.players[g.turn])} mendapat giliran.`,mentions:[sender,g.players[g.turn]]}).catch(()=>{});
         return sock.sendMessage(jid,{text:`🃏 ${playerTag(sender)} memainkan ${actual}${hand.length===1?' — *UNO!*':''}\nKartu atas: ${g.top}\nGiliran: ${playerTag(g.players[g.turn])}`,mentions:[sender,g.players[g.turn]]});
       }
       if (sub === 'end') { if (sender !== g.host) throw new UserError('Hanya host.'); lobbies.delete(jid); return reply('🛑 UNO diakhiri host.'); }
-      throw new UserError(`Gunakan ${prefix}uno start|join|begin|hand|end. Saat bermain, kirim kartu langsung ke grup atau ketik ambil. Pilihan warna: merah/kuning/hijau/biru.`);
+      throw new UserError(`Gunakan ${prefix}uno start|join|begin|hand|play <kartu>|color <warna>|draw|end. Saat giliranmu, kartu bisa dikirim langsung di grup atau ketik ambil.`);
     },
   },
   {

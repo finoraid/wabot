@@ -6,7 +6,7 @@ import { findCommand } from './registry.js';
 import { checkAfk } from './afk.js';
 import { handleGameMessage } from './games.js';
 import { hasActiveQuiz } from './commands/communitygames.js';
-import { getUnoDirectAction, isUnoWaitingColor } from './commands/socialgames.js';
+import { isUnoWaitingColor, isUnoTurn } from './commands/socialgames.js';
 import { addChatXp, fmt } from './economy.js';
 import { observeMessage } from './antidelete.js';
 import { getBody, getContextInfo, getQuotedText, num } from './utils.js';
@@ -87,14 +87,15 @@ export async function handleMessage(sock, msg) {
   // Input langsung untuk game aktif: jawaban kuis A-D dan pilihan warna UNO tanpa prefix.
   if (!msg.key.fromMe && jid.endsWith('@g.us') && !body.startsWith(config.prefix)) {
     const senderForGame = msg.key.participant || jid;
-    if (isUnoWaitingColor(jid, senderForGame)) {
+    if (/^[a-d]$/i.test(body) && hasActiveQuiz(jid)) body = `${config.prefix}quizbattle jawab ${body.toUpperCase()}`;
+    else if (isUnoWaitingColor(jid, senderForGame)) {
       const colors = { merah: 'red', kuning: 'yellow', hijau: 'green', biru: 'blue', red: 'red', yellow: 'yellow', green: 'green', blue: 'blue', '🔴': 'red', '🟡': 'yellow', '🟢': 'green', '🔵': 'blue' };
       const chosen = colors[body.toLowerCase()];
       if (chosen) body = `${config.prefix}uno color ${chosen}`;
-    } else {
-      const unoAction = getUnoDirectAction(jid, senderForGame, body);
-      if (unoAction) body = `${config.prefix}uno ${unoAction}`;
-      else if (/^[a-d]$/i.test(body) && hasActiveQuiz(jid)) body = `${config.prefix}quizbattle jawab ${body.toUpperCase()}`;
+    } else if (isUnoTurn(jid, senderForGame)) {
+      if (/^(ambil|draw)$/i.test(body)) body = `${config.prefix}uno draw`;
+      else if (/^(?:🔴|🟡|🟢|🔵)\s*(?:\d|skip|reverse|\+2)$/i.test(body) || /^(?:🌈\s*(?:wild|\+4))$/i.test(body)) body = `${config.prefix}uno play ${body.replace(/\s+/g, '')}`;
+      else if (/^(?:red|yellow|green|blue|merah|kuning|hijau|biru)$/i.test(body)) return;
     }
   }
 
