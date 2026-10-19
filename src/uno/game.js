@@ -1,7 +1,13 @@
 import crypto from 'node:crypto';
+import { createMusic, snapshot, applyAction, keyMatches, createAttemptLimiter } from './music.js';
 
 export function attachUno(io) {
 const rooms = new Map();
+const globalMusic = createMusic();
+const adminLimiter = createAttemptLimiter();
+// Room selalu dibuat lewat sini supaya semua field wajib (hands, music) ada.
+const newRoom = (code, extra = {}) => ({ code, players: [], hands: {}, status: 'lobby', message: '', music: createMusic(), ...extra });
+const isOwner = (room, id) => room.players[0]?.id === id;
 const COLORS = ['red', 'yellow', 'green', 'blue'];
 const COLOR_EMOJI = { red: '🔴', yellow: '🟡', green: '🟢', blue: '🔵' };
 const ACTIONS = ['skip', 'reverse', '+2'];
@@ -55,7 +61,7 @@ function publicState(room, viewerId) {
     hand: room.hands[viewerId] || [], top: room.discard[room.discard.length - 1], chosenColor: room.chosenColor,
     turnPlayerId: room.players[room.turn]?.id, direction: room.direction, penalty: room.penalty, stackType: room.stackType,
     pendingColor: room.pendingColor ? { playerId: room.pendingColor.playerId } : null, winner: room.winner,
-    deckCount: room.deck.length, message: room.message || '', canDraw: room.players[room.turn]?.id === viewerId
+    deckCount: room.deck.length, message: room.message || '', canDraw: room.players[room.turn]?.id === viewerId, isOwner: isOwner(room, viewerId)
   };
 }
 function emitState(room) { for (const p of room.players) if (!p.isAI) io.to(p.id).emit('game:state', publicState(room, p.id)); }
@@ -156,34 +162,73 @@ function joinRoom(socket, room, name) {
   if (room.players.some(p => p.id === socket.id)) return;
   const player = { id: socket.id, name: String(name || 'Player').trim().slice(0, 18) || 'Player', isAI: false };
   room.players.push(player); room.hands[player.id] = []; socket.join(room.code); socket.data.roomCode = room.code;
+  socket.emit('music:state', { scope: 'room', code: room.code, state: snapshot(room.music) });
   broadcast(room, `${player.name} bergabung ke room.`); emitLobby(room);
 }
 function emitLobby(room) {
-  for (const p of room.players) if (!p.isAI) io.to(p.id).emit('room:state', { code: room.code, players: room.players.map(x => ({ name: x.name, isAI: x.isAI })), canStart: room.players[0]?.id === p.id && room.players.length >= 2 });
+  for (const p of room.players) if (!p.isAI) io.to(p.id).emit('room:state', { code: room.code, players: room.players.map(x => ({ name: x.name, isAI: x.isAI })), canStart: isOwner(room, p.id) && room.players.length >= 2, isOwner: isOwner(room, p.id) });
 }
 function findRoomForSocket(socket) { return safeRoom(socket.data.roomCode); }
 function replyError(socket, err) { socket.emit('app:error', err.message || 'Terjadi kesalahan.'); }
+function removePlayer(socket) {
+  const code = socket.data.roomCode; socket.data.roomCode = null;
+  if (!code) return;
+  socket.leave(code);
+  const room = rooms.get(code); if (!room) return;
+  room.players = room.players.filter(p => p.id !== socket.id); delete room.hands[socket.id];
+  if (!room.players.some(p => !p.isAI)) { rooms.delete(code); return; }
+  if (room.status === 'playing') { room.status = 'finished'; broadcast(room, 'Pemain keluar. Pertandingan dihentikan.'); emitState(room); }
+  else if (room.status === 'lobby') emitLobby(room);
+  else emitState(room);
+}
+function reply(cb, payload) { if (typeof cb === 'function') cb(payload); }
 io.on('connection', socket => {
+  socket.emit('music:state', { scope: 'global', state: snapshot(globalMusic) });
   socket.on('room:create', ({ name } = {}) => {
-    try { const code = uid(); const room = { code, players: [], status: 'lobby', message: '' }; rooms.set(code, room); joinRoom(socket, room, name); socket.emit('room:created', { code }); }
+    try { removePlayer(socket); const code = uid(); const room = newRoom(code); rooms.set(code, room); joinRoom(socket, room, name); socket.emit('room:created', { code }); }
     catch (e) { replyError(socket, e); }
   });
-  socket.on('room:join', ({ code, name } = {}) => { try { joinRoom(socket, safeRoom(code), name); } catch (e) { replyError(socket, e); } });
+  socket.on('room:join', ({ code, name } = {}) => { try { const room = safeRoom(code); if (socket.data.roomCode !== room.code) removePlayer(socket); joinRoom(socket, room, name); } catch (e) { replyError(socket, e); } });
   socket.on('room:ai', ({ name, difficulty } = {}) => {
-    try { const code = uid(); const room = { code, players: [], status: 'lobby', message: '', aiDifficulty: ['easy','normal','hard'].includes(difficulty) ? difficulty : 'normal' }; rooms.set(code, room); joinRoom(socket, room, name); for (let i = 1; i <= 3; i++) room.players.push({ id: `AI-${code}-${i}`, name: ['Nova','Pixel','Rex'][i-1], isAI: true }); socket.emit('room:created', { code }); startGame(room); emitState(room); } catch (e) { replyError(socket, e); }
+    try { removePlayer(socket); const code = uid(); const room = newRoom(code, { aiDifficulty: ['easy','normal','hard'].includes(difficulty) ? difficulty : 'normal' }); rooms.set(code, room); joinRoom(socket, room, name); for (let i = 1; i <= 3; i++) room.players.push({ id: `AI-${code}-${i}`, name: ['Nova','Pixel','Rex'][i-1], isAI: true }); socket.emit('room:created', { code }); startGame(room); } catch (e) { replyError(socket, e); }
   });
   socket.on('room:quick', ({ name } = {}) => {
-    try { let room = [...rooms.values()].find(r => r.status === 'lobby' && r.players.length < 4); if (!room) { const code = uid(); room = { code, players: [], status: 'lobby', message: '' }; rooms.set(code, room); } joinRoom(socket, room, name); socket.emit('room:created', { code: room.code }); }
+    try { const current = rooms.get(socket.data.roomCode); if (!current || current.status !== 'lobby') removePlayer(socket); let room = current && current.status === 'lobby' ? current : [...rooms.values()].find(r => r.status === 'lobby' && r.players.length < 4 && r.players.some(p => !p.isAI)); if (!room) { const code = uid(); room = newRoom(code); rooms.set(code, room); } joinRoom(socket, room, name); socket.emit('room:created', { code: room.code }); }
     catch (e) { replyError(socket, e); }
   });
-  socket.on('room:leave', () => { const code = socket.data.roomCode; const room = rooms.get(code); if (room) { room.players = room.players.filter(p => p.id !== socket.id); delete room.hands?.[socket.id]; if (!room.players.length) rooms.delete(code); else emitLobby(room); } socket.leave(code); socket.data.roomCode = null; socket.emit('room:left'); });
+  socket.on('room:leave', () => { removePlayer(socket); socket.emit('room:left'); });
   socket.on('game:uno', () => { try { const room = findRoomForSocket(socket); const p = room.players.find(x => x.id === socket.id); if (p && room.hands[p.id]?.length === 2) broadcast(room, `${p.name} memanggil UNO!`); } catch (_) {} });
   socket.on('room:start', () => { try { const room = findRoomForSocket(socket); if (room.players[0]?.id !== socket.id) throw new Error('Hanya pembuat room yang bisa memulai.'); if (room.players.length < 2) throw new Error('Butuh minimal 2 pemain.'); startGame(room); } catch (e) { replyError(socket, e); } });
   socket.on('game:play', ({ index, color } = {}) => { try { const room = findRoomForSocket(socket); playCard(room, room.players.find(p => p.id === socket.id), Number(index), color); } catch (e) { replyError(socket, e); } });
   socket.on('game:color', ({ color } = {}) => { try { const room = findRoomForSocket(socket); chooseColor(room, room.players.find(p => p.id === socket.id), color); } catch (e) { replyError(socket, e); } });
   socket.on('game:draw', () => { try { const room = findRoomForSocket(socket); drawTurn(room, room.players.find(p => p.id === socket.id)); } catch (e) { replyError(socket, e); } });
   socket.on('game:restart', () => { try { const room = findRoomForSocket(socket); if (room.players[0]?.id !== socket.id) throw new Error('Hanya pembuat room yang bisa memulai ulang.'); startGame(room); } catch (e) { replyError(socket, e); } });
-  socket.on('disconnect', () => { const code = socket.data.roomCode; if (!code) return; const room = rooms.get(code); if (!room) return; room.players = room.players.filter(p => p.id !== socket.id); delete room.hands?.[socket.id]; if (!room.players.length) rooms.delete(code); else { if (room.status === 'playing') { room.status = 'finished'; broadcast(room, 'Pemain terputus. Pertandingan dihentikan.'); emitState(room); } else emitLobby(room); } });
+
+  // ---- Musik ----
+  // Global: hanya admin (UNO_ADMIN_KEY di Railway Variables). Berlaku untuk semua pengunjung.
+  socket.on('music:global', ({ key, action, url } = {}, cb) => {
+    try {
+      const expected = process.env.UNO_ADMIN_KEY || '';
+      if (!expected) throw new Error('UNO_ADMIN_KEY belum diset di Railway Variables.');
+      if (adminLimiter.blocked(socket.id)) throw new Error('Terlalu banyak percobaan. Coba lagi 1 menit lagi.');
+      if (!keyMatches(key, expected)) { adminLimiter.fail(socket.id); throw new Error('Admin key salah.'); }
+      adminLimiter.ok(socket.id);
+      if (action !== 'auth') { applyAction(globalMusic, action, url); io.emit('music:state', { scope: 'global', state: snapshot(globalMusic) }); }
+      reply(cb, { ok: true });
+    } catch (e) { reply(cb, { ok: false, error: e.message || 'Gagal.' }); }
+  });
+  // Room: hanya pemilik room (pemain pertama). Pemain lain hanya mengikuti.
+  socket.on('music:room', ({ action, url } = {}, cb) => {
+    try {
+      const room = findRoomForSocket(socket);
+      if (!isOwner(room, socket.id)) throw new Error('Hanya owner room yang bisa mengatur musik room.');
+      applyAction(room.music, action, url);
+      io.to(room.code).emit('music:state', { scope: 'room', code: room.code, state: snapshot(room.music) });
+      reply(cb, { ok: true });
+    } catch (e) { reply(cb, { ok: false, error: e.message || 'Gagal.' }); }
+  });
+
+  socket.on('disconnect', () => { adminLimiter.forget(socket.id); removePlayer(socket); });
 });
 
 }

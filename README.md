@@ -188,3 +188,12 @@ The game frontend is in `public/uno/`, and its game logic is in `src/uno/game.js
 If applying this integration over an existing checkout, remove the old lockfile before committing because the new `socket.io` dependency is intentionally resolved during the Docker build:
 `rm package-lock.json`
 Then run `npm install --package-lock-only` when internet access is available, or leave the lockfile absent so the Dockerfile uses `npm install`.
+
+### UNO ARENA: sistem musik
+
+- **Global Music** (semua pengunjung): admin membuka panel ♫ → *Global Music · Admin*, isi `UNO_ADMIN_KEY`, pasang URL dengan **SET**, lalu **PLAY / PAUSE / STOP**. Wajib set variable `UNO_ADMIN_KEY` di Railway; tanpa itu kontrol global ditolak. Percobaan key salah dibatasi (5x gagal → diblok 1 menit).
+- **Room Music**: hanya owner room (pemain pertama) yang bisa memasang URL dan PLAY / PAUSE / STOP. Selama owner sudah memasang URL, musik room menggantikan musik global untuk pemain di room itu. Jika owner keluar, owner berikutnya mengambil alih kontrol.
+- Pemain baru (global maupun room) langsung mengikuti status dan posisi lagu yang sedang berjalan.
+- **Volume dan mute bersifat pribadi** (tersimpan di browser masing-masing) dan tidak memengaruhi pemain lain.
+- Sumber yang didukung: link langsung ke file audio (mp3/ogg/wav, atau stream) dan link YouTube. Browser memblokir autoplay, jadi pengunjung baru mungkin perlu menyentuh layar sekali agar suara mulai (chip MUSIC menampilkan `TAP`).
+- State musik disimpan di memori proses, jadi kembali kosong saat Railway restart/deploy.

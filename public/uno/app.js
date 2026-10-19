@@ -1,7 +1,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const socket = io();
-  let myName = '', roomCode = '', state = null, lobby = null, previousHandCount = 0, audioCtx = null, toastTimer = null, chosenCardIndex = null, localObjectUrl = null;
+  let myName = '', roomCode = '', state = null, lobby = null, previousHandCount = 0, audioCtx = null, toastTimer = null, chosenCardIndex = null, isOwner = false;
   const audio = $('musicAudio');
   const COLOR_NAMES = { red: 'RED', yellow: 'YELLOW', green: 'GREEN', blue: 'BLUE' };
   const CARD_COLORS = { red: 'color-red', yellow: 'color-yellow', green: 'color-green', blue: 'color-blue', wild: 'color-wild' };
@@ -31,34 +31,120 @@
     const d = ['easy','normal','hard'].includes(difficulty.trim().toLowerCase()) ? difficulty.trim().toLowerCase() : 'normal';
     socket.emit('room:ai', { name, difficulty: d });
   });
-  $('backHome').addEventListener('click', () => { socket.emit('room:leave'); roomCode = ''; lobby = null; showScreen('homeScreen'); });
+  $('backHome').addEventListener('click', () => { socket.emit('room:leave'); resetRoomLocal(); showScreen('homeScreen'); });
   $('copyCode').addEventListener('click', async () => { try { await navigator.clipboard.writeText(roomCode); toast('Kode room disalin!'); } catch (_) { toast('Kode room: ' + roomCode); } });
   $('startGame').addEventListener('click', () => socket.emit('room:start'));
-  $('leaveGame').addEventListener('click', () => { if (confirm('Keluar dari pertandingan?')) { socket.emit('room:leave'); state = null; lobby = null; roomCode = ''; showScreen('homeScreen'); } });
+  $('leaveGame').addEventListener('click', () => { if (confirm('Keluar dari pertandingan?')) { socket.emit('room:leave'); resetRoomLocal(); showScreen('homeScreen'); } });
   $('drawPile').addEventListener('click', () => { if (state) { playSfx('draw'); socket.emit('game:draw'); } });
   $('drawButton').addEventListener('click', () => { if (state) { playSfx('draw'); socket.emit('game:draw'); } });
   $('unoButton').addEventListener('click', () => { playSfx('uno'); toast('UNO! 🔥'); socket.emit('game:uno'); });
   $('playAgain').addEventListener('click', () => socket.emit('game:restart'));
-  $('endHome').addEventListener('click', () => { socket.emit('room:leave'); state = null; lobby = null; roomCode = ''; showScreen('homeScreen'); });
+  $('endHome').addEventListener('click', () => { socket.emit('room:leave'); resetRoomLocal(); showScreen('homeScreen'); });
   $('audioSettings').addEventListener('click', openAudio); $('openMusic').addEventListener('click', openAudio); $('closeAudio').addEventListener('click', () => $('audioModal').classList.add('hidden'));
-  $('musicFile').addEventListener('change', e => { const f = e.target.files?.[0]; if (!f) return; if (localObjectUrl) URL.revokeObjectURL(localObjectUrl); localObjectUrl = URL.createObjectURL(f); audio.src = localObjectUrl; audio.play().then(() => { $('toggleMusic').textContent = 'Ⅱ PAUSE MUSIC'; $('musicStatus').textContent = 'ON'; }).catch(() => toast('Tekan Play Music untuk mulai.')); });
-  $('useMusicUrl').addEventListener('click', () => { const url = $('musicUrl').value.trim(); if (!/^https?:\/\//i.test(url)) return toast('Masukkan URL audio yang valid.'); audio.src = url; audio.play().then(() => { $('toggleMusic').textContent = 'Ⅱ PAUSE MUSIC'; $('musicStatus').textContent = 'ON'; toast('Musik diputar.'); }).catch(() => toast('Audio tidak bisa diputar. Pastikan URL langsung ke file audio dan mendukung CORS.')); });
-  $('toggleMusic').addEventListener('click', async () => { if (!audio.src) { toast('Upload musik atau masukkan URL audio dulu.'); return; } if (audio.paused) { try { await audio.play(); $('toggleMusic').textContent = 'Ⅱ PAUSE MUSIC'; $('musicStatus').textContent = 'ON'; } catch (_) { toast('Browser tidak bisa memutar sumber audio ini.'); } } else { audio.pause(); $('toggleMusic').textContent = '▶ PLAY MUSIC'; $('musicStatus').textContent = 'PAUSED'; } });
-  $('stopMusic').addEventListener('click', () => { audio.pause(); audio.currentTime = 0; $('toggleMusic').textContent = '▶ PLAY MUSIC'; $('musicStatus').textContent = 'OFF'; });
-  $('musicVolume').addEventListener('input', e => { audio.volume = Number(e.target.value) / 100; $('volumeValue').textContent = e.target.value + '%'; }); audio.volume = .35;
   $('sfxVolume').addEventListener('input', e => $('sfxValue').textContent = e.target.value + '%');
-  $('usePlatform').addEventListener('click', () => {
-    const url = $('platformUrl').value.trim(); if (!url) return toast('Tempel link YouTube atau Spotify.');
-    let embed = '';
-    const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/i);
-    const sp = url.match(/open\.spotify\.com\/(track|album|playlist|episode|show)\/([\w]+)/i);
-    if (yt) { embed = `<iframe title="YouTube music player" src="https://www.youtube-nocookie.com/embed/${yt[1]}?autoplay=1&enablejsapi=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`; $('platformPlayer').innerHTML = embed; $('platformPlayer').classList.remove('hidden'); $('musicStatus').textContent = 'PLAYER'; toast('Player YouTube siap. Tekan Play di player jika autoplay diblokir.'); }
-    else if (sp) { window.open(`https://open.spotify.com/${sp[1]}/${sp[2]}`, '_blank', 'noopener'); toast('Spotify dibuka di tab baru.'); }
-    else toast('Link belum didukung. Coba link YouTube atau Spotify.');
+  function openAudio() { $('audioModal').classList.remove('hidden'); updateMusicUI(); playSfx('click'); }
+
+  // ===== MUSIC =====
+  // Dua sumber tersinkron dari server: global (admin) dan room (owner). Di dalam room, musik room
+  // menggantikan global selama owner sudah memasang URL. Volume/mute hanya lokal.
+  const music = { global: null, room: null };
+  let musicVol = 0.35, musicMuted = false;
+  try { const v = parseFloat(localStorage.getItem('uno.musicVol')); if (!isNaN(v)) musicVol = Math.min(1, Math.max(0, v)); musicMuted = localStorage.getItem('uno.musicMuted') === '1'; } catch (_) {}
+  const store = (k, v) => { try { localStorage.setItem(k, v); } catch (_) {} };
+  const effVol = () => musicMuted ? 0 : musicVol;
+  const ytId = (url) => { const m = String(url).match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/i); return m ? m[1] : null; };
+  const targetPos = (s) => s.status === 'playing' ? s.pos + (Date.now() - s.at) / 1000 : s.pos;
+  const dock = $('ytDock');
+
+  // -- engine: <audio> untuk URL langsung
+  const A = {
+    url: '', blocked: false, pending: null,
+    seek(pos, tol) { const go = () => { const d = audio.duration; const t = isFinite(d) && d > 0 ? pos % d : pos; if (Math.abs(audio.currentTime - t) > tol) { try { audio.currentTime = t; } catch (_) {} } }; if (audio.readyState >= 1) { this.pending = null; go(); } else this.pending = go; },
+    load(url) { if (this.url !== url) { this.url = url; audio.src = url; audio.load(); } },
+    play(getPos) { this.seek(getPos(), 1.5); audio.play().then(() => { this.blocked = false; updateMusicUI(); }).catch(err => { if (err && err.name === 'NotAllowedError') { this.blocked = true; updateMusicUI(); } }); },
+    pause(pos) { audio.pause(); this.blocked = false; this.seek(pos, .3); },
+    clear() { if (!this.url) return; audio.pause(); this.url = ''; this.blocked = false; this.pending = null; audio.removeAttribute('src'); audio.load(); },
+  };
+  audio.addEventListener('loadedmetadata', () => { if (A.pending) { const f = A.pending; A.pending = null; f(); } });
+  audio.addEventListener('error', () => { if (A.url) toast('Musik tidak bisa diputar. Pastikan URL langsung ke file audio (mp3/ogg) atau link YouTube.'); });
+
+  // -- engine: YouTube IFrame API
+  let ytApiQueue = null;
+  function loadYtApi(cb) {
+    if (window.YT && window.YT.Player) return cb();
+    if (ytApiQueue) return ytApiQueue.push(cb);
+    ytApiQueue = [cb]; window.onYouTubeIframeAPIReady = () => { const q = ytApiQueue; ytApiQueue = null; q.forEach(f => f()); };
+    const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; s.onerror = () => { ytApiQueue = null; toast('Player YouTube gagal dimuat.'); }; document.head.appendChild(s);
+  }
+  const Y = {
+    p: null, ready: false, vid: '', mode: null, getPos: null,
+    load(vid) {
+      if (this.vid === vid && this.p) return;
+      this.destroy(); this.vid = vid; dock.innerHTML = '<div id="ytHost"></div>'; dock.classList.remove('hidden');
+      loadYtApi(() => {
+        if (this.vid !== vid) return;
+        this.p = new window.YT.Player('ytHost', { width: '100%', height: '100%', videoId: vid, playerVars: { playsinline: 1, controls: 0, rel: 0, modestbranding: 1, disablekb: 1 }, events: {
+          onReady: () => { this.ready = true; this.p.setVolume(effVol() * 100); this.flush(); updateMusicUI(); },
+          onStateChange: (e) => { if (e.data === 0 && this.mode === 'play') { this.p.seekTo(0, true); this.p.playVideo(); } updateMusicUI(); },
+          onError: () => toast('Video YouTube tidak bisa diputar (mungkin embed dinonaktifkan).'),
+        } });
+      });
+    },
+    set(mode, getPos) { this.mode = mode; this.getPos = getPos; this.flush(); },
+    flush() {
+      if (!this.ready || !this.mode) return;
+      const pos = this.getPos(), d = this.p.getDuration ? this.p.getDuration() : 0, t = d > 0 ? pos % d : pos, cur = this.p.getCurrentTime ? this.p.getCurrentTime() : 0;
+      if (this.mode === 'play') { if (Math.abs(cur - t) > 1.5) this.p.seekTo(t, true); this.p.playVideo(); } else { this.p.seekTo(t, true); this.p.pauseVideo(); }
+    },
+    playing() { return !!(this.ready && this.p.getPlayerState && [1, 3].includes(this.p.getPlayerState())); },
+    destroy() { try { if (this.p && this.p.destroy) this.p.destroy(); } catch (_) {} this.p = null; this.ready = false; this.vid = ''; this.mode = null; dock.classList.add('hidden'); dock.innerHTML = ''; },
+  };
+
+  function effective() { return roomCode && music.room && music.room.url && music.room.code === roomCode ? { scope: 'room', s: music.room } : { scope: 'global', s: music.global }; }
+  function needsTap() { const s = effective().s; return !!(s && s.url && s.status === 'playing' && (A.blocked || (Y.mode === 'play' && Y.ready && !Y.playing()))); }
+  function applyVolume() { audio.volume = effVol(); if (Y.ready && Y.p.setVolume) Y.p.setVolume(effVol() * 100); }
+  function applyMusic() {
+    const s = effective().s; applyVolume();
+    if (!s || !s.url || s.status === 'stopped') { A.clear(); Y.destroy(); return updateMusicUI(); }
+    const vid = ytId(s.url);
+    if (vid) { A.clear(); Y.load(vid); Y.set(s.status === 'playing' ? 'play' : 'pause', () => targetPos(s)); }
+    else { Y.destroy(); A.load(s.url); if (s.status === 'playing') A.play(() => targetPos(s)); else A.pause(s.pos); }
+    updateMusicUI();
+  }
+  function updateMusicUI() {
+    const { scope, s } = effective(), has = !!(s && s.url);
+    const word = !has ? 'OFF' : s.status === 'playing' ? (needsTap() ? 'TAP' : 'ON') : s.status === 'paused' ? 'PAUSED' : 'OFF';
+    $('musicStatus').textContent = word;
+    $('nowSource').textContent = !has ? 'Tidak ada musik' : scope === 'room' ? '👑 Room music' : '🌐 Global music';
+    let host = ''; if (has) { try { host = new URL(s.url).hostname; } catch (_) {} }
+    $('nowInfo').textContent = !has ? 'Belum ada musik yang dipasang.' : ({ playing: needsTap() ? 'Sentuh layar untuk memulai' : 'Sedang diputar', paused: 'Dijeda', stopped: 'Berhenti — tekan PLAY di panel kontrol' }[s.status]) + ' · ' + host;
+    $('roomMusicBox').classList.toggle('hidden', !roomCode);
+    $('roomControls').classList.toggle('hidden', !isOwner);
+    $('roomMusicNote').textContent = isOwner ? 'Kamu owner room. Musik ini tersinkron ke semua pemain di room dan menggantikan musik global.' : 'Hanya owner room yang bisa mengatur musik ini. Kamu mengikuti otomatis.';
+    $('muteMusic').textContent = musicMuted ? '🔈 UNMUTE' : '🔇 MUTE FOR ME';
+    $('musicVolume').value = Math.round(musicVol * 100); $('volumeValue').textContent = musicMuted ? 'MUTED' : Math.round(musicVol * 100) + '%';
+  }
+  function sendMusic(scope, action) {
+    const g = scope === 'global';
+    const payload = g ? { key: $('gKey').value, action, url: $('gUrl').value.trim() } : { action, url: $('rUrl').value.trim() };
+    if (g && !payload.key) return toast('Isi admin key dulu.');
+    socket.emit(g ? 'music:global' : 'music:room', payload, res => { if (!res || !res.ok) toast((res && res.error) || 'Gagal mengatur musik.'); });
+  }
+  [['g', 'global'], ['r', 'room']].forEach(([pre, scope]) => ['Set', 'Play', 'Pause', 'Stop'].forEach(a => $(pre + a).addEventListener('click', () => { playSfx('click'); sendMusic(scope, a.toLowerCase()); })));
+  $('musicVolume').addEventListener('input', e => { musicVol = Number(e.target.value) / 100; if (musicVol > 0) musicMuted = false; store('uno.musicVol', musicVol); store('uno.musicMuted', musicMuted ? '1' : '0'); applyVolume(); updateMusicUI(); });
+  $('muteMusic').addEventListener('click', () => { musicMuted = !musicMuted; store('uno.musicMuted', musicMuted ? '1' : '0'); applyVolume(); updateMusicUI(); });
+  // Browser memblokir autoplay sampai ada sentuhan: coba lagi pada interaksi berikutnya.
+  ['click', 'touchend', 'keydown'].forEach(ev => document.addEventListener(ev, () => { if (needsTap()) applyMusic(); }, { capture: true, passive: true }));
+  socket.on('music:state', ({ scope, code, state } = {}) => {
+    if (!state) return;
+    if (scope === 'global') music.global = { ...state, at: Date.now() };
+    else if (scope === 'room') music.room = { ...state, code, at: Date.now() };
+    else return;
+    applyMusic();
   });
-  function openAudio() { $('audioModal').classList.remove('hidden'); playSfx('click'); }
+  function resetRoomLocal() { state = null; lobby = null; roomCode = ''; isOwner = false; music.room = null; applyMusic(); }
   function renderLobby(data) {
-    lobby = data; roomCode = data.code || roomCode; $('roomCode').textContent = roomCode; $('lobbyPlayers').innerHTML = '';
+    lobby = data; roomCode = data.code || roomCode; isOwner = !!data.isOwner; $('roomCode').textContent = roomCode; $('lobbyPlayers').innerHTML = '';
     data.players.forEach((p, i) => { const el = document.createElement('div'); el.className = 'lobby-player'; el.innerHTML = `<span class="avatar">${escapeHtml(p.name.slice(0,1).toUpperCase())}</span><div><strong>${escapeHtml(p.name)}</strong><small>${i === 0 ? 'ROOM HOST' : p.isAI ? 'AI PLAYER' : 'PLAYER'}</small></div>`; $('lobbyPlayers').appendChild(el); });
     const canStart = !!data.canStart; $('startGame').classList.toggle('hidden', !canStart); $('lobbyHint').textContent = canStart ? 'All set. Start when everyone is ready.' : 'Waiting for the host to start…';
   }
@@ -70,7 +156,7 @@
     return el;
   }
   function renderGame(s) {
-    state = s; showScreen('gameScreen'); $('roomPill').textContent = 'ROOM ' + s.code; $('opponents').innerHTML = '';
+    state = s; isOwner = !!s.isOwner; showScreen('gameScreen'); $('roomPill').textContent = 'ROOM ' + s.code; $('opponents').innerHTML = '';
     s.players.filter(p => p.id !== socket.id).forEach(p => { const el = document.createElement('div'); el.className = 'opponent' + (p.turn ? ' active-turn' : ''); el.innerHTML = `<span class="avatar">${p.isAI ? '🤖' : escapeHtml(p.name.slice(0,1).toUpperCase())}</span><div><strong>${escapeHtml(p.name)}</strong><small>${p.count} CARDS</small></div><div class="mini-cards">${Array.from({length:Math.min(p.count,5)},()=>'<span class="mini-card"></span>').join('')}</div>`; $('opponents').appendChild(el); });
     const top = s.top; $('discardStack').innerHTML = ''; if (top) $('discardStack').appendChild(cardNode(top, 0, false)); $('colorIndicator').textContent = COLOR_EMOJI(s.chosenColor || top?.color || 'red'); $('colorIndicator').style.color = s.chosenColor || top?.color || 'red';
     const myTurn = s.turnPlayerId === socket.id; $('turnBanner').textContent = s.status === 'finished' ? 'MATCH FINISHED' : myTurn ? '✦ YOUR TURN' : `${s.players.find(p=>p.id===s.turnPlayerId)?.name || 'Opponent'}’S TURN`;
@@ -84,11 +170,11 @@
   function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   document.querySelectorAll('.color-picker button').forEach(btn => btn.addEventListener('click', () => { socket.emit('game:color', { color: btn.dataset.color }); $('colorPicker').classList.add('hidden'); playSfx('wild'); }));
   socket.on('connect', () => setConnection(true)); socket.on('disconnect', () => setConnection(false));
-  socket.on('room:created', data => { roomCode = data.code; $('roomCode').textContent = roomCode; showScreen('lobbyScreen'); });
-  socket.on('room:state', data => { roomCode = data.code; renderLobby(data); showScreen('lobbyScreen'); });
+  socket.on('room:created', data => { roomCode = data.code; $('roomCode').textContent = roomCode; showScreen('lobbyScreen'); applyMusic(); });
+  socket.on('room:state', data => { roomCode = data.code; renderLobby(data); showScreen('lobbyScreen'); applyMusic(); });
   socket.on('game:state', s => { renderGame(s); if (s.hand.length < previousHandCount) playSfx('play'); previousHandCount = s.hand.length; });
   socket.on('game:notice', message => { $('gameMessage').textContent = message; if (/menang/i.test(message)) playSfx('win'); });
   socket.on('app:error', message => toast(message));
-  socket.on('room:left', () => { state = null; lobby = null; roomCode = ''; showScreen('homeScreen'); });
-  $('musicStatus').textContent = 'OFF';
+  socket.on('room:left', () => { resetRoomLocal(); showScreen('homeScreen'); });
+  updateMusicUI();
 })();
