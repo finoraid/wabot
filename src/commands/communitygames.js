@@ -21,10 +21,13 @@ const questions = [
 ];
 function portfolio(jid) { if (!portfolios.has(jid)) portfolios.set(jid, { cash: 10000, holdings: {} }); return portfolios.get(jid); }
 
+// Dipakai handler untuk menerima jawaban A/B/C/D langsung saat ronde aktif.
+export function hasActiveQuiz(jid) { const g = quizzes.get(jid); return !!g && Date.now() - g.at <= 25000; }
+
 export default [
  { name:'quizbattle', aliases:['qbattle'], category:'Game', usage:'start | jawab <A-D> | score', desc:'Kuis kompetitif grup dengan skor', async run({jid,isGroup,sender,args,reply,prefix}) {
    needGroup(isGroup); const sub=(args[0]||'help').toLowerCase();
-   if(sub==='start') { const q=questions[Math.floor(Math.random()*questions.length)]; const old=quizzes.get(jid); if(old && Date.now()-old.at<25000) throw new UserError('Ronde masih aktif. Tunggu 25 detik atau cek .quizbattle score.'); quizzes.set(jid,{q,at:Date.now(),scores:old?.scores||{}}); return reply(`🧠 *QUIZ BATTLE*\n${q.q}\n\nA) ${q.opts[0]}\nB) ${q.opts[1]}\nC) ${q.opts[2]}\nD) ${q.opts[3]}\n\nJawab: ${prefix}quizbattle jawab <A-D>\nRonde berakhir dalam 25 detik.`); }
+   if(sub==='start') { const q=questions[Math.floor(Math.random()*questions.length)]; const old=quizzes.get(jid); if(old && Date.now()-old.at<25000) throw new UserError('Ronde masih aktif. Tunggu 25 detik atau cek .quizbattle score.'); quizzes.set(jid,{q,at:Date.now(),scores:old?.scores||{}}); return reply(`🧠 *QUIZ BATTLE*\n${q.q}\n\nA) ${q.opts[0]}\nB) ${q.opts[1]}\nC) ${q.opts[2]}\nD) ${q.opts[3]}\n\nJawab cukup ketik *A*, *B*, *C*, atau *D* (tanpa command).\nRonde berakhir dalam 25 detik.`); }
    if(sub==='jawab') { const g=quizzes.get(jid); if(!g || Date.now()-g.at>25000) throw new UserError(`Belum ada ronde aktif. Ketik ${prefix}quizbattle start.`); const choice=(args[1]||'').toUpperCase(); if(!['A','B','C','D'].includes(choice)) throw new UserError(`Format: ${prefix}quizbattle jawab A`); if(g.scores[sender]?.round===g.at) throw new UserError('Kamu sudah menjawab ronde ini.'); const correct='ABCD'[g.q.a]===choice; g.scores[sender]={points:(g.scores[sender]?.points||0)+(correct?10:0),round:g.at}; if(correct) return reply(`✅ Benar, ${tag(sender)}! +10 poin.`,{mentions:[sender]}); return reply(`❌ Belum tepat, ${tag(sender)}.`,{mentions:[sender]}); }
    if(sub==='score') { const g=quizzes.get(jid); if(!g) throw new UserError('Belum ada skor. Mulai dengan .quizbattle start.'); const rows=Object.entries(g.scores).sort((a,b)=>b[1].points-a[1].points).slice(0,10); return reply(`🏆 *QUIZ BATTLE SCORE*\n${rows.length?rows.map(([p,v],i)=>`${i+1}. ${tag(p)} — ${v.points} poin`).join('\n'):'Belum ada jawaban.'}`,{mentions:rows.map(([p])=>p)}); }
    throw new UserError(`Gunakan ${prefix}quizbattle start|jawab A|score`);

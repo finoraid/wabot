@@ -5,6 +5,8 @@ import { getMeta } from './groupCache.js';
 import { findCommand } from './registry.js';
 import { checkAfk } from './afk.js';
 import { handleGameMessage } from './games.js';
+import { hasActiveQuiz } from './commands/communitygames.js';
+import { isUnoWaitingColor } from './commands/socialgames.js';
 import { addChatXp, fmt } from './economy.js';
 import { observeMessage } from './antidelete.js';
 import { getBody, getContextInfo, getQuotedText, num } from './utils.js';
@@ -79,8 +81,19 @@ export async function handleMessage(sock, msg) {
   }
   // Anti-hapus & anti-sekali-lihat: catat pesan masuk, tangkap pesan yang ditarik, teruskan media sekali lihat.
   await observeMessage(sock, msg).catch((e) => console.error('[antidelete]', e.message));
-  const body = getBody(msg).trim();
+  let body = getBody(msg).trim();
   if (!body) return;
+
+  // Input langsung untuk game aktif: jawaban kuis A-D dan pilihan warna UNO tanpa prefix.
+  if (!msg.key.fromMe && jid.endsWith('@g.us') && !body.startsWith(config.prefix)) {
+    const senderForGame = msg.key.participant || jid;
+    if (/^[a-d]$/i.test(body) && hasActiveQuiz(jid)) body = `${config.prefix}quizbattle jawab ${body.toUpperCase()}`;
+    else if (isUnoWaitingColor(jid, senderForGame)) {
+      const colors = { merah: 'red', kuning: 'yellow', hijau: 'green', biru: 'blue', red: 'red', yellow: 'yellow', green: 'green', blue: 'blue', '🔴': 'red', '🟡': 'yellow', '🟢': 'green', '🔵': 'blue' };
+      const chosen = colors[body.toLowerCase()];
+      if (chosen) body = `${config.prefix}uno color ${chosen}`;
+    }
+  }
 
   const senderIds = await withMappedPhones(sock, senderIdsOf(msg), msg);
   const isOwner = !!msg.key.fromMe || config.owners.some((o) => senderIds.has(o));
