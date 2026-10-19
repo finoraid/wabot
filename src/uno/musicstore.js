@@ -54,6 +54,9 @@ export function createMusicStore({ dir, maxFileBytes = 50 * 1024 * 1024, maxTota
       } else if (scope === 'room') {
         if (!hooks.isRoomOwner || !hooks.isRoomOwner(url.searchParams.get('sid') || '')) return json(res, 403, { ok: false, error: 'Hanya owner room yang bisa upload musik room.' });
       } else if (scope === 'snakes') {
+        const expected = process.env.UNO_ADMIN_KEY || '';
+        if (!expected) return json(res, 403, { ok: false, error: 'UNO_ADMIN_KEY belum diset di Railway Variables.' });
+        if (!keyMatches(req.headers['x-admin-key'], expected)) return json(res, 403, { ok: false, error: 'Admin key salah.' });
         if (!hooks.isSnakesRoomOwner || !hooks.isSnakesRoomOwner(url.searchParams.get('sid') || '')) return json(res, 403, { ok: false, error: 'Hanya host Ular Tangga yang bisa upload musik room.' });
       } else return json(res, 400, { ok: false, error: 'Scope tidak valid.' });
       if (!rateOk(ip)) return json(res, 429, { ok: false, error: 'Terlalu banyak upload. Coba lagi beberapa menit lagi.' });
