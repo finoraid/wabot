@@ -31,7 +31,15 @@ export function getBody(msg) {
   if (!t) return '';
   const m = c[t];
   if (t === 'conversation') return m || '';
-  return m?.text || m?.caption || '';
+  // Ubah respons tombol/list WhatsApp menjadi ID command agar bisa diproses handler biasa.
+  if (t === 'buttonsResponseMessage') return m?.selectedButtonId || m?.selectedDisplayText || '';
+  if (t === 'templateButtonReplyMessage') return m?.selectedId || m?.selectedDisplayText || '';
+  if (t === 'listResponseMessage') return m?.singleSelectReply?.selectedRowId || '';
+  if (t === 'interactiveResponseMessage') {
+    const raw = m?.nativeFlowResponseMessage?.paramsJson;
+    if (raw) { try { const parsed = JSON.parse(raw); return parsed.id || parsed.row_id || parsed.selected_id || ''; } catch {} }
+  }
+  return m?.text || m?.caption || ''; 
 }
 
 export function getContextInfo(msg) {

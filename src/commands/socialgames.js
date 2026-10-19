@@ -33,7 +33,7 @@ export default [
   {
     name: 'gamehub', aliases: ['games','game'], category: 'Game', desc: 'Menu permainan multiplayer grup',
     async run({ reply, prefix }) {
-      await reply(`🎮 *WABOT GAME HUB*\nGame multiplayer & kompetitif yang tersedia:\n\n🕵️ *IMPOSTOR*\n${prefix}impostor start — buat lobby\n${prefix}impostor join — gabung\n${prefix}impostor begin — mulai (min. 3 pemain)\n${prefix}impostor hint <petunjuk> — beri petunjuk\n${prefix}impostor vote @orang — voting\n${prefix}impostor end — akhiri game\n\n🃏 *UNO MINI*\n${prefix}uno start — buat lobby\n${prefix}uno join — gabung\n${prefix}uno begin — mulai (2–6 pemain)\n${prefix}uno hand — lihat kartu pribadi\n${prefix}uno play <warna/angka> — mainkan kartu\n${prefix}uno draw — ambil kartu\n${prefix}uno end — akhiri game\n\n🧠 *QUIZ BATTLE*\n${prefix}quizbattle start — mulai ronde kuis\n${prefix}quizbattle jawab <A-D> — jawab cepat\n${prefix}quizbattle score — lihat skor ronde\n\n🛡️ *CLAN & CLAN WAR*\n${prefix}clan create <nama> — buat clan\n${prefix}clan join <nama> — gabung clan\n${prefix}clan info — info clan kamu\n${prefix}clan rank — ranking clan\n${prefix}clan war <nama> — simulasi perang clan\n${prefix}clan leave — keluar clan\n\n📈 *VIRTUAL MARKET*\n${prefix}market prices — cek harga aset virtual\n${prefix}market portfolio — cek saldo/aset\n${prefix}market buy BTC 1000 — beli pakai koin virtual\n${prefix}market sell BTC 0.01 — jual unit aset\n${prefix}market tick 3 — ubah harga simulasi\n\n⚔️ *BATTLE*\n${prefix}battle @orang — duel cepat\n\n🎭 *PARTY*\n${prefix}truth — pertanyaan truth acak\n${prefix}dare — tantangan dare acak\n\n🏆 Skor game lama: ${prefix}skor\n💡 AI ringan: ${prefix}ai <pertanyaan>\n\nCatatan: data/lobby game masih disimpan di memori proses, jadi bisa reset saat bot restart. Market dan Clan War adalah simulasi, bukan transaksi uang asli atau pertarungan real-time.`);;
+      await reply(`🎮 *WABOT GAME HUB*\nGame multiplayer & kompetitif yang tersedia:\n\n🕵️ *IMPOSTOR*\n${prefix}impostor start — buat lobby\n${prefix}impostor join — gabung\n${prefix}impostor begin — mulai (min. 3 pemain)\n${prefix}impostor hint <petunjuk> — beri petunjuk\n${prefix}impostor vote @orang — voting\n${prefix}impostor end — akhiri game\n\n🃏 *UNO MINI*\n${prefix}uno start — buat lobby\n${prefix}uno join — gabung\n${prefix}uno begin — mulai (2–6 pemain)\n${prefix}uno hand — lihat kartu pribadi\n${prefix}uno play <kartu> — mainkan kartu\n${prefix}uno color <warna> — pilih warna setelah Wild/+4\n${prefix}uno draw — ambil kartu\n${prefix}uno end — akhiri game\n\n🧠 *QUIZ BATTLE*\n${prefix}quizbattle start — mulai ronde kuis\n${prefix}quizbattle jawab <A-D> — jawab cepat\n${prefix}quizbattle score — lihat skor ronde\n\n🛡️ *CLAN & CLAN WAR*\n${prefix}clan create <nama> — buat clan\n${prefix}clan join <nama> — gabung clan\n${prefix}clan info — info clan kamu\n${prefix}clan rank — ranking clan\n${prefix}clan war <nama> — simulasi perang clan\n${prefix}clan leave — keluar clan\n\n📈 *VIRTUAL MARKET*\n${prefix}market prices — cek harga aset virtual\n${prefix}market portfolio — cek saldo/aset\n${prefix}market buy BTC 1000 — beli pakai koin virtual\n${prefix}market sell BTC 0.01 — jual unit aset\n${prefix}market tick 3 — ubah harga simulasi\n\n⚔️ *BATTLE*\n${prefix}battle @orang — duel cepat\n\n🎭 *PARTY*\n${prefix}truth — pertanyaan truth acak\n${prefix}dare — tantangan dare acak\n\n🏆 Skor game lama: ${prefix}skor\n💡 AI ringan: ${prefix}ai <pertanyaan>\n\nCatatan: data/lobby game masih disimpan di memori proses, jadi bisa reset saat bot restart. Market dan Clan War adalah simulasi, bukan transaksi uang asli atau pertarungan real-time.`);;
     },
   },
   {
@@ -110,11 +110,23 @@ export default [
       if (sub === 'begin') {
         if (sender !== g.host) throw new UserError('Hanya host yang bisa memulai.'); if (g.phase !== 'lobby') throw new UserError('UNO sudah dimulai.'); if (g.players.length < 2) throw new UserError('Minimal 2 pemain.');
         const deck = shuffle(COLORS.flatMap((c) => Array.from({length: 10}, (_,i) => `${c}${i}`).concat([`${c}Skip`, `${c}Reverse`, `${c}+2`])) .concat(Array.from({length:4},()=>['🌈Wild','🌈+4']).flat()));
-        g.hands = Object.fromEntries(g.players.map(p => [p, deck.splice(0,7)])); g.deck = deck; g.top = g.deck.pop(); g.turn = 0; g.phase = 'playing';
+        g.hands = Object.fromEntries(g.players.map(p => [p, deck.splice(0,7)])); g.deck = deck; g.top = g.deck.pop(); while (g.top.startsWith('🌈')) { g.deck.unshift(g.top); g.top = g.deck.pop(); } g.turn = 0; g.phase = 'playing'; g.pendingColor = null; g.drawPenalty = 0;
         const failed=[]; for (const p of g.players) { try { await sock.sendMessage(p,{text:`🃏 UNO dimulai!\nKartu kamu: ${g.hands[p].join(' | ')}\nKartu atas: ${g.top}\nMainkan: ${prefix}uno play <kartu> atau ambil: ${prefix}uno draw`}); } catch { failed.push(p); } }
         return reply(`🃏 *UNO DIMULAI!*\nKartu atas: ${g.top}\nGiliran: ${playerTag(g.players[g.turn])}\nPemain menerima kartu lewat chat pribadi.`, { mentions: [g.players[g.turn], ...failed] });
       }
       if (g.phase !== 'playing') throw new UserError('UNO belum dimulai.');
+      if (sub === 'color') {
+        if (!g.pendingColor || g.pendingColor.player !== sender) throw new UserError('Kamu tidak sedang memilih warna.');
+        const colorMap = { red: '🔴', merah: '🔴', yellow: '🟡', kuning: '🟡', green: '🟢', hijau: '🟢', blue: '🔵', biru: '🔵', '🔴':'🔴', '🟡':'🟡', '🟢':'🟢', '🔵':'🔵' };
+        const chosen = colorMap[(args[1] || '').toLowerCase()];
+        if (!chosen) throw new UserError(`Pilih warna: ${prefix}uno color red|yellow|green|blue`);
+        g.top = `${chosen}${g.pendingColor.card === '🌈+4' ? '+4' : 'Wild'}`;
+        const wasPlusFour = g.pendingColor.card === '🌈+4';
+        g.pendingColor = null;
+        if (wasPlusFour) { const target = g.players[(g.turn + 1) % g.players.length]; for (let i=0;i<4;i++) { if (!g.deck.length) g.deck = shuffle(g.players.flatMap(p => g.hands[p])); const c = g.deck.pop(); if (c) g.hands[target].push(c); } g.turn = (g.turn + 2) % g.players.length; }
+        else g.turn = (g.turn + 1) % g.players.length;
+        return sock.sendMessage(jid, { text: `🎨 ${playerTag(sender)} memilih warna ${chosen}${wasPlusFour ? '\n➕4: pemain berikutnya mengambil 4 kartu dan kehilangan giliran.' : ''}\nKartu atas: ${g.top}\nGiliran: ${playerTag(g.players[g.turn])}`, mentions: [sender, g.players[g.turn]] });
+      }
       if (sub === 'hand') return sock.sendMessage(sender,{text:`🃏 Kartu kamu:\n${(g.hands[sender]||[]).join(' | ') || '(kosong)'}`});
       if (sub === 'draw') {
         if (g.players[g.turn] !== sender) throw new UserError(`Belum giliranmu. Giliran ${playerTag(g.players[g.turn])}.`);
@@ -125,18 +137,30 @@ export default [
       }
       if (sub === 'play') {
         if (g.players[g.turn] !== sender) throw new UserError(`Belum giliranmu. Giliran ${playerTag(g.players[g.turn])}.`);
-        const card = args.slice(1).join(''); const hand = g.hands[sender]; const actual = hand?.find(c => c.toLowerCase() === card.toLowerCase());
+        const card = args.slice(1).join(''); const hand = g.hands[sender]; const actual = hand?.find(c => c.toLowerCase() === card.toLowerCase() || c.replace(/\s/g,'').toLowerCase() === card.replace(/\s/g,'').toLowerCase());
         if (!actual) throw new UserError(`Kartu tidak ditemukan. Lihat ${prefix}uno hand.`);
         const colorOf = c => COLORS.find(x => c.startsWith(x));
         if (!(actual.startsWith('🌈') || g.top.startsWith('🌈') || actual === g.top || colorOf(actual) && colorOf(actual) === colorOf(g.top) || /^\d$/.test(actual.replace(/^\D+/,'')) && actual.replace(/^\D+/, '') === g.top.replace(/^\D+/,''))) throw new UserError(`Kartu ${actual} tidak cocok dengan kartu atas ${g.top}.`);
-        hand.splice(hand.indexOf(actual),1); g.top=actual;
+        hand.splice(hand.indexOf(actual),1);
+        if (actual.startsWith('🌈')) {
+          g.pendingColor = { player: sender, card: actual };
+          const sections = [{ title: 'Pilih warna', rows: [
+            { title: '🔴 Merah', rowId: `${prefix}uno color red`, description: 'Lanjut dengan warna merah' },
+            { title: '🟡 Kuning', rowId: `${prefix}uno color yellow`, description: 'Lanjut dengan warna kuning' },
+            { title: '🟢 Hijau', rowId: `${prefix}uno color green`, description: 'Lanjut dengan warna hijau' },
+            { title: '🔵 Biru', rowId: `${prefix}uno color blue`, description: 'Lanjut dengan warna biru' },
+          ] }];
+          g.top = actual;
+          return sock.sendMessage(jid, { text: `🎨 ${playerTag(sender)} memainkan ${actual}. Pilih warna berikutnya:`, footer: 'UNO Mini', title: 'UNO — Pilih Warna', buttonText: 'PILIH WARNA', sections, mentions: [sender] });
+        }
+        g.top=actual;
         if (!hand.length) { lobbies.delete(jid); return sock.sendMessage(jid,{text:`🏆 *UNO SELESAI!*\n${playerTag(sender)} menang!`,mentions:[sender]}); }
-        let step = 1; if (/Skip|\+2|Reverse/.test(actual)) step = 2; g.turn=(g.turn+step)%g.players.length;
+        let step = 1; if (/Skip|Reverse/.test(actual)) step = 2; if (actual.endsWith('+2')) { const target = g.players[(g.turn + 1) % g.players.length]; for (let i=0;i<2;i++) { if (!g.deck.length) g.deck = shuffle(g.players.flatMap(p => g.hands[p])); const c = g.deck.pop(); if (c) g.hands[target].push(c); } step = 2; } g.turn=(g.turn+step)%g.players.length;
         for (const p of g.players) if (p !== sender) sock.sendMessage(p,{text:`🃏 ${playerTag(sender)} memainkan ${actual}. Kartu atas sekarang ${g.top}. ${playerTag(g.players[g.turn])} mendapat giliran.`,mentions:[sender,g.players[g.turn]]}).catch(()=>{});
         return sock.sendMessage(jid,{text:`🃏 ${playerTag(sender)} memainkan ${actual}${hand.length===1?' — *UNO!*':''}\nKartu atas: ${g.top}\nGiliran: ${playerTag(g.players[g.turn])}`,mentions:[sender,g.players[g.turn]]});
       }
       if (sub === 'end') { if (sender !== g.host) throw new UserError('Hanya host.'); lobbies.delete(jid); return reply('🛑 UNO diakhiri host.'); }
-      throw new UserError(`Gunakan ${prefix}uno start|join|begin|hand|play <kartu>|draw|end`);
+      throw new UserError(`Gunakan ${prefix}uno start|join|begin|hand|play <kartu>|color red|yellow|green|blue|draw|end`);
     },
   },
   {
