@@ -80,7 +80,8 @@ export function createWebServer({ qrKey, startedAt = Date.now(), log = console.l
     }
 
     // UNO ARENA static site, mounted under /uno without replacing WaBot routes.
-    if (url.pathname === '/uno' || url.pathname === '/uno/') {
+    // Redirect only the bare path; never redirect /uno/ to itself.
+    if (url.pathname === '/uno') {
       res.writeHead(302, { Location: '/uno/' });
       res.end();
       return;
