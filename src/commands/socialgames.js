@@ -114,7 +114,7 @@ export default [
       if (sub === 'begin') {
         if (sender !== g.host) throw new UserError('Hanya host yang bisa memulai.'); if (g.phase !== 'lobby') throw new UserError('UNO sudah dimulai.'); if (g.players.length < 2) throw new UserError('Minimal 2 pemain.');
         const deck = shuffle(COLORS.flatMap((c) => Array.from({length: 10}, (_,i) => `${c}${i}`).concat([`${c}Skip`, `${c}Reverse`, `${c}+2`])) .concat(Array.from({length:4},()=>['🌈Wild','🌈+4']).flat()));
-        g.hands = Object.fromEntries(g.players.map(p => [p, deck.splice(0,7)])); g.deck = deck; g.top = g.deck.pop(); while (g.top.startsWith('🌈')) { g.deck.unshift(g.top); g.top = g.deck.pop(); } g.turn = 0; g.direction = 1; g.phase = 'playing'; g.pendingColor = null; g.drawPenalty = 0;
+        g.hands = Object.fromEntries(g.players.map(p => [p, deck.splice(0,7)])); g.deck = deck; g.top = g.deck.pop(); while (g.top.startsWith('🌈')) { g.deck.unshift(g.top); g.top = g.deck.pop(); } g.turn = 0; g.direction = 1; g.phase = 'playing'; g.pendingColor = null; g.drawPenalty = 0; g.stackType = null; g.stackLastPlayer = null; g.stackLastCard = null;
         const failed=[]; for (const p of g.players) { try { await sock.sendMessage(p,{text:`🃏 UNO dimulai!\nKartu kamu: ${g.hands[p].join(' | ')}\nKartu atas: ${g.top}\nKirim kartu langsung di grup (contoh 🟢2), atau ketik *ambil*. Kartu juga bisa dimainkan dengan ${prefix}uno play <kartu>.`}); } catch { failed.push(p); } }
         return reply(`🃏 *UNO DIMULAI!*\nKartu atas: ${g.top}\nGiliran: ${playerTag(g.players[g.turn])}\nPemain menerima kartu lewat chat pribadi.`, { mentions: [g.players[g.turn], ...failed] });
       }
@@ -125,32 +125,53 @@ export default [
         const chosen = colorMap[(args[1] || '').toLowerCase()];
         if (!chosen) throw new UserError(`Pilih warna: merah, kuning, hijau, atau biru.`);
         g.top = `${chosen}${g.pendingColor.card === '🌈+4' ? '+4' : 'Wild'}`;
-        const wasPlusFour = g.pendingColor.card === '🌈+4';
+        const nextTurn = g.pendingColor.nextTurn;
         g.pendingColor = null;
-        if (wasPlusFour) { const target = g.players[(g.turn + g.direction + g.players.length) % g.players.length]; for (let i=0;i<4;i++) { if (!g.deck.length) g.deck = shuffle(g.players.flatMap(p => p === target ? [] : g.hands[p])); const c = g.deck.pop(); if (c) g.hands[target].push(c); } g.turn = (g.turn + 2*g.direction + g.players.length*2) % g.players.length; }
-        else g.turn = (g.turn + g.direction + g.players.length) % g.players.length;
-        return sock.sendMessage(jid, { text: `🎨 ${playerTag(sender)} memilih warna ${chosen}${wasPlusFour ? '\n➕4: pemain berikutnya mengambil 4 kartu dan kehilangan giliran.' : ''}\nKartu atas: ${g.top}\nGiliran: ${playerTag(g.players[g.turn])}`, mentions: [sender, g.players[g.turn]] });
+        g.top = `${chosen}${g.stackLastCard === '🌈+4' ? '+4' : 'Wild'}`;
+        g.stackType = null; g.drawPenalty = 0; g.stackLastPlayer = null; g.stackLastCard = null;
+        g.turn = nextTurn;
+        return sock.sendMessage(jid, { text: `🎨 ${playerTag(sender)} memilih warna ${chosen}.\nKartu atas: ${g.top}\nGiliran: ${playerTag(g.players[g.turn])}`, mentions: [sender, g.players[g.turn]] });
       }
       if (sub === 'hand') return sock.sendMessage(sender,{text:`🃏 Kartu kamu:\n${(g.hands[sender]||[]).join(' | ') || '(kosong)'}`});
       if (sub === 'draw') {
         if (g.players[g.turn] !== sender) throw new UserError(`Belum giliranmu. Giliran ${playerTag(g.players[g.turn])}.`);
-        if (!g.deck.length) g.deck = shuffle(g.players.flatMap(p => g.hands[p]));
-        const card = g.deck.pop(); g.hands[sender].push(card); const old = g.turn; g.turn = (g.turn+1)%g.players.length;
-        await sock.sendMessage(sender,{text:`Kamu mengambil ${card}. Kartu kamu: ${g.hands[sender].join(' | ')}`});
-        return sock.sendMessage(jid,{text:`➕ ${playerTag(sender)} mengambil kartu. Kartu atas: ${g.top}\nGiliran: ${playerTag(g.players[g.turn])}`,mentions:[sender,g.players[g.turn]]});
+        const penalty = g.drawPenalty || 0;
+        const amount = penalty || 1;
+        for (let i = 0; i < amount; i++) {
+          if (!g.deck.length) g.deck = shuffle(g.players.flatMap(p => p === sender ? [] : g.hands[p]));
+          const card = g.deck.pop(); if (card) g.hands[sender].push(card);
+        }
+        await sock.sendMessage(sender,{text:`Kamu mengambil ${amount} kartu${penalty ? ' sebagai penalti stacking' : ''}. Kartu kamu: ${g.hands[sender].join(' | ')}`});
+        const skippedIndex = g.turn;
+        const nextTurn = (g.turn + g.direction + g.players.length) % g.players.length;
+        if (g.stackType === '+4' && g.stackLastPlayer) {
+          g.pendingColor = { player: g.stackLastPlayer, card: '🌈+4', nextTurn };
+          return sock.sendMessage(jid,{text:`🧱 ${playerTag(sender)} tidak bisa menimpa +4 dan mengambil ${amount} kartu. Sekarang ${playerTag(g.stackLastPlayer)} pilih warna dengan mengetik merah/kuning/hijau/biru.`,mentions:[sender,g.stackLastPlayer]});
+        }
+        g.turn = nextTurn; g.drawPenalty = 0; g.stackType = null; g.stackLastPlayer = null; g.stackLastCard = null;
+        return sock.sendMessage(jid,{text:`➕ ${playerTag(sender)} mengambil ${amount} kartu${penalty ? ' dan kehilangan giliran' : ''}. Kartu atas: ${g.top}\nGiliran: ${playerTag(g.players[g.turn])}`,mentions:[sender,g.players[g.turn]]});
       }
       if (sub === 'play') {
         if (g.players[g.turn] !== sender) throw new UserError(`Belum giliranmu. Giliran ${playerTag(g.players[g.turn])}.`);
         const card = args.slice(1).join('').replace(/\s/g, ''); const hand = g.hands[sender]; const actual = hand?.find(c => c.toLowerCase() === card.toLowerCase() || c.replace(/\s/g,'').toLowerCase() === card.toLowerCase());
         if (!actual) throw new UserError(`Kartu tidak ditemukan. Lihat ${prefix}uno hand.`);
+        const actionOf = c => c.endsWith('+2') ? '+2' : c === '🌈+4' || c.endsWith('+4') ? '+4' : /Skip$/i.test(c) ? 'Skip' : /Reverse$/i.test(c) ? 'Reverse' : c === '🌈Wild' || c.endsWith('Wild') ? 'Wild' : null;
+        if (g.drawPenalty) {
+          const type = actionOf(actual);
+          if (type !== g.stackType) throw new UserError(`Penalti aktif +${g.drawPenalty}. Kamu hanya bisa menimpa dengan kartu ${g.stackType} yang sama; kalau tidak punya, ketik *ambil* untuk mengambil ${g.drawPenalty} kartu.`);
+        }
         const colorOf = c => COLORS.find(x => c.startsWith(x));
-        const actionOf = c => c.endsWith('+2') ? '+2' : /Skip$/i.test(c) ? 'Skip' : /Reverse$/i.test(c) ? 'Reverse' : c === '🌈Wild' || c.endsWith('Wild') ? 'Wild' : c === '🌈+4' || c.endsWith('+4') ? '+4' : null;
         const sameAction = actionOf(actual) && actionOf(actual) === actionOf(g.top);
         const sameNumber = /^\D*\d$/.test(actual) && actual.replace(/^\D+/, '') === g.top.replace(/^\D+/, '');
         if (!(actual.startsWith('🌈') || g.top.startsWith('🌈') || actual === g.top || (colorOf(actual) && colorOf(actual) === colorOf(g.top)) || sameNumber || sameAction)) throw new UserError(`Kartu ${actual} tidak cocok dengan kartu atas ${g.top}.`);
         hand.splice(hand.indexOf(actual),1);
         if (actual.startsWith('🌈')) {
-          g.pendingColor = { player: sender, card: actual };
+          if (actual === '🌈+4') {
+            g.top = actual; g.stackType = '+4'; g.drawPenalty = (g.drawPenalty || 0) + 4; g.stackLastPlayer = sender; g.stackLastCard = actual;
+            g.turn = (g.turn + g.direction + g.players.length) % g.players.length;
+            return sock.sendMessage(jid, { text: `➕4 ${playerTag(sender)} menumpuk +4! Penalti sekarang ${g.drawPenalty} kartu. ${playerTag(g.players[g.turn])}, jika punya +4 kamu bisa menimpa; jika tidak, ketik *ambil*. Warna dipilih setelah rangkaian +4 selesai.`, mentions: [sender, g.players[g.turn]] });
+          }
+          g.pendingColor = { player: sender, card: actual, nextTurn: (g.turn + g.direction + g.players.length) % g.players.length };
           const sections = [{ title: 'Pilih warna', rows: [
             { title: '🔴 Merah', rowId: `${prefix}uno color red`, description: 'Lanjut dengan warna merah' },
             { title: '🟡 Kuning', rowId: `${prefix}uno color yellow`, description: 'Lanjut dengan warna kuning' },
@@ -165,7 +186,11 @@ export default [
         let step = 1;
         if (/Reverse$/.test(actual)) { g.direction *= -1; if (g.players.length === 2) step = 2; }
         if (/Skip$/.test(actual)) step = 2;
-        if (actual.endsWith('+2')) { const target = g.players[(g.turn + g.direction + g.players.length) % g.players.length]; for (let i=0;i<2;i++) { if (!g.deck.length) g.deck = shuffle(g.players.flatMap(p => p === target ? [] : g.hands[p])); const c = g.deck.pop(); if (c) g.hands[target].push(c); } step = 2; }
+        if (actual.endsWith('+2')) {
+          g.stackType = '+2'; g.drawPenalty = (g.drawPenalty || 0) + 2; g.stackLastPlayer = sender; g.stackLastCard = actual;
+          g.turn = (g.turn + g.direction + g.players.length) % g.players.length;
+          return sock.sendMessage(jid,{text:`➕2 ${playerTag(sender)} menumpuk +2! Penalti sekarang ${g.drawPenalty} kartu. ${playerTag(g.players[g.turn])}, jika punya +2 kamu bisa menimpa; jika tidak, ketik *ambil* untuk mengambil ${g.drawPenalty} kartu.`,mentions:[sender,g.players[g.turn]]});
+        }
         g.turn=(g.turn+step*g.direction+g.players.length*2)%g.players.length;
         for (const p of g.players) if (p !== sender) sock.sendMessage(p,{text:`🃏 ${playerTag(sender)} memainkan ${actual}. Kartu atas sekarang ${g.top}. ${playerTag(g.players[g.turn])} mendapat giliran.`,mentions:[sender,g.players[g.turn]]}).catch(()=>{});
         return sock.sendMessage(jid,{text:`🃏 ${playerTag(sender)} memainkan ${actual}${hand.length===1?' — *UNO!*':''}\nKartu atas: ${g.top}\nGiliran: ${playerTag(g.players[g.turn])}`,mentions:[sender,g.players[g.turn]]});
