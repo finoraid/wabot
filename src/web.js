@@ -1,3 +1,5 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 // Server HTTP kecil: healthcheck di "/" dan halaman QR di "/qr?key=<QR_KEY>".
 import crypto from 'node:crypto';
 import http from 'node:http';
@@ -74,6 +76,32 @@ export function createWebServer({ qrKey, startedAt = Date.now(), log = console.l
       url = new URL(req.url, 'http://localhost');
     } catch {
       res.writeHead(400).end();
+      return;
+    }
+
+    // UNO ARENA static site, mounted under /uno without replacing WaBot routes.
+    if (url.pathname === '/uno' || url.pathname === '/uno/') {
+      res.writeHead(302, { Location: '/uno/' });
+      res.end();
+      return;
+    }
+    if (url.pathname.startsWith('/uno/')) {
+      const relative = decodeURIComponent(url.pathname.slice('/uno/'.length) || 'index.html');
+      const root = path.resolve(process.cwd(), 'public', 'uno');
+      const file = path.resolve(root, relative);
+      if (file !== root && !file.startsWith(root + path.sep)) {
+        res.writeHead(403).end('Forbidden');
+        return;
+      }
+      const types = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon' };
+      try {
+        const data = await fs.readFile(file);
+        res.writeHead(200, { 'Content-Type': types[path.extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+        res.end(data);
+      } catch {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('UNO ARENA file not found');
+      }
       return;
     }
 

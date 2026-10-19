@@ -24,6 +24,7 @@ RUN (npx --no-install playwright-core install --with-deps chromium && rm -rf /va
  || echo "PERINGATAN: Chromium gagal dipasang, deteksi video via browser nonaktif"
 
 COPY src ./src
+COPY public ./public
 
 ENV NODE_ENV=production \
     DATA_DIR=/data

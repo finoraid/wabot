@@ -177,3 +177,14 @@ Catatan tes: lobby dan progres game multiplayer saat ini disimpan di memori pros
 - AI ringan tetap memakai command AI yang sudah ada di project.
 
 Catatan: game aktif disimpan di memori proses dan akan reset jika bot restart. Uji di grup kecil sebelum dipakai ramai-ramai.
+
+
+## UNO ARENA (website game)
+
+UNO ARENA is integrated into the same HTTP server as WaBot and is available at `/uno/` on the Railway domain. Its Socket.IO game events share the existing HTTP server; no second server or second Railway service is started.
+
+The game frontend is in `public/uno/`, and its game logic is in `src/uno/game.js`. `socket.io` is an added runtime dependency. The Docker image copies `public/` so the game files are included in deployment.
+
+If applying this integration over an existing checkout, remove the old lockfile before committing because the new `socket.io` dependency is intentionally resolved during the Docker build:
+`rm package-lock.json`
+Then run `npm install --package-lock-only` when internet access is available, or leave the lockfile absent so the Dockerfile uses `npm install`.
