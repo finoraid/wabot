@@ -1,13 +1,16 @@
 import crypto from 'node:crypto';
 import { createMusic, snapshot, applyAction, keyMatches, createAttemptLimiter } from './music.js';
 
-export function attachUno(io) {
+export function attachUno(io, hooks = {}) {
 const rooms = new Map();
 const globalMusic = createMusic();
 const adminLimiter = createAttemptLimiter();
 // Room selalu dibuat lewat sini supaya semua field wajib (hands, music) ada.
 const newRoom = (code, extra = {}) => ({ code, players: [], hands: {}, status: 'lobby', message: '', music: createMusic(), ...extra });
 const isOwner = (room, id) => room.players[0]?.id === id;
+// Dipakai server HTTP (upload musik): siapa owner room, dan file mana yang sedang dipakai.
+hooks.isRoomOwner = (sid) => { const room = rooms.get(io.sockets.sockets.get(sid)?.data?.roomCode); return !!room && isOwner(room, sid); };
+hooks.inUse = () => new Set([globalMusic.url, ...[...rooms.values()].map(r => r.music.url)].filter(Boolean));
 const COLORS = ['red', 'yellow', 'green', 'blue'];
 const COLOR_EMOJI = { red: '🔴', yellow: '🟡', green: '🟢', blue: '🔵' };
 const ACTIONS = ['skip', 'reverse', '+2'];

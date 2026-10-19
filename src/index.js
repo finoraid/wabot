@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import * as baileys from '@whiskeysockets/baileys';
 import { Server as SocketIOServer } from 'socket.io';
 import { attachUno } from './uno/game.js';
@@ -25,9 +26,10 @@ const log = (...a) => console.log(new Date().toISOString(), ...a);
 
 // ---------- HTTP: healthcheck di "/" + halaman QR di "/qr?key=<QR_KEY>" ----------
 loginState.mode = config.loginMode;
-const httpServer = createWebServer({ qrKey: config.qrKey, startedAt, log });
+const unoHooks = {};
+const httpServer = createWebServer({ qrKey: config.qrKey, startedAt, log, musicDir: path.join(config.dataDir, 'uno-music'), unoHooks });
 const socketIO = new SocketIOServer(httpServer, { serveClient: true, maxHttpBufferSize: 1e6 });
-attachUno(socketIO);
+attachUno(socketIO, unoHooks);
 httpServer.listen(config.port, () => log(`HTTP di port ${config.port} (UNO ARENA: /uno/)`));
 if (config.loginMode === 'qr') {
   log(

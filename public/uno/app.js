@@ -131,6 +131,28 @@
     socket.emit(g ? 'music:global' : 'music:room', payload, res => { if (!res || !res.ok) toast((res && res.error) || 'Gagal mengatur musik.'); });
   }
   [['g', 'global'], ['r', 'room']].forEach(([pre, scope]) => ['Set', 'Play', 'Pause', 'Stop'].forEach(a => $(pre + a).addEventListener('click', () => { playSfx('click'); sendMusic(scope, a.toLowerCase()); })));
+  // Upload file musik (disimpan di server, dipakai semua pemain lewat URL /uno/music/...).
+  function uploadTrack(scope, file, input) {
+    const pre = scope === 'global' ? 'g' : 'r', status = $(pre + 'UpStatus');
+    if (!file) return;
+    if (scope === 'global' && !$('gKey').value) { input.value = ''; return toast('Isi admin key dulu.'); }
+    if (file.size > 20 * 1024 * 1024) { input.value = ''; return toast('File maksimal 20 MB.'); }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/uno/upload?scope=${scope}&sid=${encodeURIComponent(socket.id || '')}`);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    if (scope === 'global') xhr.setRequestHeader('x-admin-key', $('gKey').value);
+    const done = (msg) => { status.textContent = msg || ''; input.value = ''; input.disabled = false; };
+    input.disabled = true; status.textContent = 'Mengupload… 0%';
+    xhr.upload.onprogress = e => { if (e.lengthComputable) status.textContent = `Mengupload… ${Math.round(e.loaded / e.total * 100)}%`; };
+    xhr.onerror = () => { done(''); toast('Upload gagal. Cek koneksi.'); };
+    xhr.onload = () => {
+      let r = {}; try { r = JSON.parse(xhr.responseText); } catch (_) {}
+      if (xhr.status === 200 && r.ok) { $(pre + 'Url').value = r.url; done('Terupload ✓ — tekan PLAY'); sendMusic(scope, 'set'); }
+      else { done(''); toast(r.error || 'Upload gagal.'); }
+    };
+    xhr.send(file);
+  }
+  ['g', 'r'].forEach(pre => $(pre + 'File').addEventListener('change', e => uploadTrack(pre === 'g' ? 'global' : 'room', e.target.files && e.target.files[0], e.target)));
   $('musicVolume').addEventListener('input', e => { musicVol = Number(e.target.value) / 100; if (musicVol > 0) musicMuted = false; store('uno.musicVol', musicVol); store('uno.musicMuted', musicMuted ? '1' : '0'); applyVolume(); updateMusicUI(); });
   $('muteMusic').addEventListener('click', () => { musicMuted = !musicMuted; store('uno.musicMuted', musicMuted ? '1' : '0'); applyVolume(); updateMusicUI(); });
   // Browser memblokir autoplay sampai ada sentuhan: coba lagi pada interaksi berikutnya.

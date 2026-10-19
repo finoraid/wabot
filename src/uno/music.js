@@ -1,5 +1,8 @@
 import crypto from 'node:crypto';
 
+// File musik hasil upload disajikan server di path ini (nama dibuat server, bukan dari klien).
+export const MUSIC_URL_RE = /^\/uno\/music\/[a-f0-9]{16}\.(mp3|ogg|wav|m4a|flac)$/;
+
 // State musik tersinkron. Dipakai untuk Global Music (satu per server) dan Room Music (satu per room).
 // Server hanya menyimpan: url, status, dan posisi. Posisi saat ini dihitung dari waktu server,
 // jadi pemain yang baru masuk langsung mengikuti posisi yang sama.
@@ -20,6 +23,7 @@ export function validateUrl(raw) {
   const url = String(raw ?? '').trim();
   if (!url) return '';
   if (url.length > 500) throw new Error('URL terlalu panjang (maks 500 karakter).');
+  if (url.startsWith('/')) { if (!MUSIC_URL_RE.test(url)) throw new Error('File musik tidak valid.'); return url; }
   let u;
   try { u = new URL(url); } catch { throw new Error('URL musik tidak valid.'); }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('URL harus diawali http:// atau https://');

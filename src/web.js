@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import QRCode from 'qrcode';
+import { createMusicStore } from './uno/musicstore.js';
 
 /** State login yang dibagi antara index.js dan halaman web. */
 export const loginState = {
@@ -67,7 +68,8 @@ async function tick(){
 tick();setInterval(tick,3000);
 </script></body></html>`;
 
-export function createWebServer({ qrKey, startedAt = Date.now(), log = console.log } = {}) {
+export function createWebServer({ qrKey, startedAt = Date.now(), log = console.log, musicDir = path.resolve(process.cwd(), 'data', 'uno-music'), unoHooks = {} } = {}) {
+  const musicStore = createMusicStore({ dir: musicDir, hooks: unoHooks, log });
   const noStore = { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex', 'Referrer-Policy': 'no-referrer' };
 
   return http.createServer(async (req, res) => {
@@ -86,6 +88,8 @@ export function createWebServer({ qrKey, startedAt = Date.now(), log = console.l
       res.end();
       return;
     }
+    if (req.method === 'POST' && url.pathname === '/uno/upload') { await musicStore.upload(req, res, url); return; }
+    if ((req.method === 'GET' || req.method === 'HEAD') && url.pathname.startsWith('/uno/music/')) { await musicStore.serve(req, res, url.pathname); return; }
     if (url.pathname.startsWith('/uno/')) {
       const relative = decodeURIComponent(url.pathname.slice('/uno/'.length) || 'index.html');
       const root = path.resolve(process.cwd(), 'public', 'uno');

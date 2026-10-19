@@ -30,14 +30,14 @@
 <button id="muteMusic" class="btn btn-ghost btn-small">🔇 MUTE FOR ME</button>
 <div class="volume-row"><label for="sfxVolume">Sound effects</label><input id="sfxVolume" type="range" min="0" max="100" value="70"><span id="sfxValue">70%</span></div></div>
 <div id="roomMusicBox" class="music-block hidden"><h3>👑 ROOM MUSIC</h3><p id="roomMusicNote" class="tiny muted"></p>
-<div id="roomControls"><div class="url-row"><input id="rUrl" type="url" placeholder="Link MP3/OGG atau YouTube" autocomplete="off"><button id="rSet" class="btn btn-secondary">SET</button></div>
-<div class="modal-actions"><button id="rPlay" class="btn btn-primary">▶ PLAY</button><button id="rPause" class="btn btn-secondary">Ⅱ PAUSE</button><button id="rStop" class="btn btn-ghost">■ STOP</button></div></div></div>
+<div id="roomControls"><div class="url-row"><input id="rUrl" type="url" placeholder="Link MP3/OGG (atau YouTube)" autocomplete="off"><button id="rSet" class="btn btn-secondary">SET</button></div>
+<label class="field-label" for="rFile">ATAU UPLOAD FILE (MP3 / OGG / WAV, MAKS 20 MB)</label><input id="rFile" type="file" accept="audio/*,.mp3,.ogg,.wav,.m4a,.flac"><p id="rUpStatus" class="tiny muted"></p><div class="modal-actions"><button id="rPlay" class="btn btn-primary">▶ PLAY</button><button id="rPause" class="btn btn-secondary">Ⅱ PAUSE</button><button id="rStop" class="btn btn-ghost">■ STOP</button></div></div></div>
 <details id="adminBox" class="music-block"><summary>🌐 GLOBAL MUSIC · ADMIN</summary><p class="tiny muted">Berlaku untuk semua pengunjung website. Butuh UNO_ADMIN_KEY dari Railway Variables.</p>
 <label class="field-label" for="gKey">ADMIN KEY</label><input id="gKey" type="password" autocomplete="off" placeholder="UNO_ADMIN_KEY">
-<label class="field-label" for="gUrl">MUSIC URL</label><div class="url-row"><input id="gUrl" type="url" placeholder="Link MP3/OGG atau YouTube" autocomplete="off"><button id="gSet" class="btn btn-secondary">SET</button></div>
-<div class="modal-actions"><button id="gPlay" class="btn btn-primary">▶ PLAY</button><button id="gPause" class="btn btn-secondary">Ⅱ PAUSE</button><button id="gStop" class="btn btn-ghost">■ STOP</button></div></details>
+<label class="field-label" for="gUrl">MUSIC URL</label><div class="url-row"><input id="gUrl" type="url" placeholder="Link MP3/OGG (atau YouTube)" autocomplete="off"><button id="gSet" class="btn btn-secondary">SET</button></div>
+<label class="field-label" for="gFile">ATAU UPLOAD FILE (MP3 / OGG / WAV, MAKS 20 MB)</label><input id="gFile" type="file" accept="audio/*,.mp3,.ogg,.wav,.m4a,.flac"><p id="gUpStatus" class="tiny muted"></p><div class="modal-actions"><button id="gPlay" class="btn btn-primary">▶ PLAY</button><button id="gPause" class="btn btn-secondary">Ⅱ PAUSE</button><button id="gStop" class="btn btn-ghost">■ STOP</button></div></details>
 <audio id="musicAudio" loop preload="auto"></audio>
-<p class="tiny muted">Pasang URL dengan SET, lalu tekan PLAY. Browser memblokir suara otomatis, jadi pengunjung baru mungkin perlu menyentuh layar sekali agar musik mulai. Di dalam room, musik room menggantikan musik global.</p></div></div>
+<p class="tiny muted">Pasang URL (atau upload file), lalu tekan PLAY. File upload paling ringan karena hanya audio. Browser memblokir suara otomatis, jadi pengunjung baru mungkin perlu menyentuh layar sekali agar musik mulai. Di dalam room, musik room menggantikan musik global.</p></div></div>
 <div id="ytDock" class="yt-dock hidden"></div>
 <div id="toast" class="toast hidden"></div>
 <script src="/socket.io/socket.io.js"></script><script src="/uno/app.js"></script>

@@ -195,5 +195,6 @@ Then run `npm install --package-lock-only` when internet access is available, or
 - **Room Music**: hanya owner room (pemain pertama) yang bisa memasang URL dan PLAY / PAUSE / STOP. Selama owner sudah memasang URL, musik room menggantikan musik global untuk pemain di room itu. Jika owner keluar, owner berikutnya mengambil alih kontrol.
 - Pemain baru (global maupun room) langsung mengikuti status dan posisi lagu yang sedang berjalan.
 - **Volume dan mute bersifat pribadi** (tersimpan di browser masing-masing) dan tidak memengaruhi pemain lain.
-- Sumber yang didukung: link langsung ke file audio (mp3/ogg/wav, atau stream) dan link YouTube. Browser memblokir autoplay, jadi pengunjung baru mungkin perlu menyentuh layar sekali agar suara mulai (chip MUSIC menampilkan `TAP`).
+- Sumber yang didukung: **upload file** (paling ringan, hanya audio), link langsung ke file audio, dan link YouTube (lebih berat karena memuat player video).
+- **Upload**: admin (pakai `UNO_ADMIN_KEY`) dan owner room bisa memilih file dari HP. Format mp3/ogg/wav/m4a/flac, maks 20 MB per file, total maks 300 MB (file lama yang tidak dipakai dihapus otomatis). Jenis file dicek dari isinya, nama file dibuat server. File disimpan di `DATA_DIR/uno-music` (di Railway: `/data`), jadi tetap ada setelah deploy selama `/data` adalah Volume. Browser memblokir autoplay, jadi pengunjung baru mungkin perlu menyentuh layar sekali agar suara mulai (chip MUSIC menampilkan `TAP`).
 - State musik disimpan di memori proses, jadi kembali kosong saat Railway restart/deploy.
