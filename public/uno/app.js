@@ -37,7 +37,12 @@
   $('leaveGame').addEventListener('click', () => { if (confirm('Keluar dari pertandingan?')) { socket.emit('room:leave'); resetRoomLocal(); showScreen('homeScreen'); } });
   $('drawPile').addEventListener('click', () => { if (state) { playSfx('draw'); socket.emit('game:draw'); } });
   $('drawButton').addEventListener('click', () => { if (state) { playSfx('draw'); socket.emit('game:draw'); } });
-  $('unoButton').addEventListener('click', () => { playSfx('uno'); toast('UNO! 🔥'); socket.emit('game:uno'); });
+  $('unoButton').addEventListener('click', () => { playSfx('uno'); sayUno(); toast('UNO! 🔥'); socket.emit('game:uno'); });
+  function sayUno() { try { if ('speechSynthesis' in window) { window.speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance('UNO!'); u.lang = 'en-US'; u.rate = .82; u.pitch = 1.35; u.volume = Math.max(.2, Number($('sfxVolume')?.value ?? 70)/100); window.speechSynthesis.speak(u); } } catch (_) {} }
+  $('fullscreenBtn').addEventListener('click', async () => { try { if (!document.fullscreenElement) await (document.documentElement.requestFullscreen?.() || document.documentElement.webkitRequestFullscreen?.()); else await (document.exitFullscreen?.() || document.webkitExitFullscreen?.()); } catch (_) { toast('Mode layar penuh tidak didukung browser ini.'); } });
+  $('chatForm').addEventListener('submit', e => { e.preventDefault(); const input = $('chatInput'); const message = input.value.trim(); if (!message) return; socket.emit('game:chat', { message }); input.value = ''; });
+  document.querySelectorAll('[data-reaction]').forEach(b => b.addEventListener('click', () => socket.emit('game:chat', { message: b.dataset.reaction, reaction: true })));
+  socket.on('game:chat', item => { const box = $('chatMessages'); const empty = box.querySelector('.chat-empty'); if (empty) empty.remove(); const row = document.createElement('div'); row.className = 'chat-message' + (item.reaction ? ' chat-reaction' : ''); const who = document.createElement('b'); who.textContent = item.name; const msg = document.createElement('span'); msg.textContent = item.message; row.append(who, msg); box.appendChild(row); while (box.children.length > 60) box.firstElementChild.remove(); box.scrollTop = box.scrollHeight; });
   $('playAgain').addEventListener('click', () => socket.emit('game:restart'));
   $('endHome').addEventListener('click', () => { socket.emit('room:leave'); resetRoomLocal(); showScreen('homeScreen'); });
   $('audioSettings').addEventListener('click', openAudio); $('openMusic').addEventListener('click', openAudio); $('closeAudio').addEventListener('click', () => $('audioModal').classList.add('hidden'));
@@ -172,7 +177,7 @@
   }
   function cardLabel(card) { return card.color === 'wild' ? (card.value === '+4' ? '+4' : 'WILD') : card.value === 'skip' ? '⊘' : card.value === 'reverse' ? '↻' : card.value; }
   function cardNode(card, index, playable = false) {
-    const el = document.createElement('button'); el.type = 'button'; el.className = `uno-card ${CARD_COLORS[card.color] || 'color-wild'}`; el.style.setProperty('--rot', `${Math.max(-8, Math.min(8, (index - 3) * 1.5))}deg`); el.setAttribute('aria-label', `${card.color} ${card.value}`);
+    const el = document.createElement('button'); el.type = 'button'; el.className = `uno-card card-enter ${CARD_COLORS[card.color] || 'color-wild'}`; el.style.setProperty('--rot', `${Math.max(-8, Math.min(8, (index - 3) * 1.5))}deg`); el.setAttribute('aria-label', `${card.color} ${card.value}`);
     el.innerHTML = `<span class="card-mini">${escapeHtml(cardLabel(card))}</span><span class="card-value">${escapeHtml(cardLabel(card))}</span><span class="card-mini bottom">${escapeHtml(cardLabel(card))}</span>`;
     if (playable) el.addEventListener('click', () => { chosenCardIndex = index; document.querySelectorAll('.player-hand .uno-card').forEach(x => x.classList.remove('selected')); el.classList.add('selected'); playSfx('click'); const c = state.hand[index]; if (c.color === 'wild' && c.value === 'wild') { $('colorPicker').classList.remove('hidden'); $('handTip').textContent = 'Choose a color above'; } else if (c.value === '+4' && state.penalty > 0) { socket.emit('game:play', { index }); } else socket.emit('game:play', { index }); });
     return el;
