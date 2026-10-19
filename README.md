@@ -203,3 +203,10 @@ Then run `npm install --package-lock-only` when internet access is available, or
 ## UNO Arena & Ular Tangga Party
 
 Kedua game web tersedia di `/uno/` dan `/snakes/`. Keduanya berbagi 12 ilustrasi sticker custom di `/stickers/` yang bisa dikirim melalui chat room. Pastikan seluruh folder `public/` ikut ter-deploy bersama server.
+
+
+## Neon Arcade V6 (Snakes & Ladders)
+
+The `/snakes/` game now uses a neon cyan/blue arcade skin with cream-and-ice-blue board tiles, brighter glowing ladder/serpent SVG artwork, animated movement tokens, and bundled illustrated scene assets for snake-hit, ladder-climb, win, and loss moments. Existing Socket.IO room/game logic, chat, sticker tray, and music controls are retained.
+
+Illustrated assets are in `public/snakes/assets/`. To test locally, install dependencies with `npm ci`, configure the required environment variables (see `.env.example`), then run `npm start` and open `/snakes/`. The full bot may require WhatsApp/session configuration before all features start.
