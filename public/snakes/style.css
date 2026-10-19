@@ -65,3 +65,20 @@ body.game-running .layout{grid-template-columns:minmax(0,1fr) minmax(260px,.55fr
 .move-effect{z-index:10;backdrop-filter:blur(8px)}
 body.game-running .game-head{position:sticky;top:0;z-index:20;background:#0b1426ee;backdrop-filter:blur(14px)}
 @media(max-width:800px){.layout,body.game-running .layout{grid-template-columns:1fr}.board-panel{padding:10px}.board{gap:1px;padding:3px}.cell{padding:1px}.cell-number{font-size:clamp(8px,2.2vw,15px)}.token{width:clamp(14px,3.4vw,26px);height:clamp(14px,3.4vw,26px);font-size:clamp(8px,1.9vw,13px)}body.game-running .chat-panel{order:2}.board-art-overlay{opacity:.96}}
+
+/* Final UX fix: music controls live on the entry page only. */
+body.in-room .home-only-panel,body.in-room .room-music,body.in-room .tips,body.in-room #musicBtn{display:none!important}
+body.in-room .layout{grid-template-columns:minmax(0,1fr) minmax(260px,.55fr)}
+/* Premium arena board: clean two-tone tiles, luminous frame and readable pieces. */
+.board-wrap{background:radial-gradient(ellipse at 50% 45%,#16466a 0,#07182b 72%);border-radius:22px;box-shadow:0 0 0 2px #8deaff,0 0 0 7px #102e4b,0 18px 45px #000b,inset 0 0 28px #31d7ff20}
+.board{padding:5px;gap:2px;background:linear-gradient(135deg,#153957,#07182a);border-radius:16px}
+.cell,.cell:nth-child(odd),.cell.ladder,.cell.snake{background:linear-gradient(145deg,#e5f5fb,#c7e0ed);border:1px solid #86b7cc;color:#0b263b;box-shadow:inset 0 1px #fff9}
+.cell:nth-child(even){background:linear-gradient(145deg,#fff8e9,#e9dfca);border-color:#c7bfae}
+.cell-number{font-size:clamp(9px,1.45vw,16px);font-weight:1000;letter-spacing:-.4px;text-shadow:0 1px 0 #fff}
+.board-art-overlay{filter:drop-shadow(0 2px 3px #00111e88)}
+.sticker-tray{grid-template-columns:repeat(3,minmax(0,1fr));background:linear-gradient(145deg,#071225,#111b35);border-color:#6c61c9;padding:8px}
+.sticker-tile{background:#101c31;border-color:#354766;border-radius:12px;padding:6px;min-height:104px}
+.sticker-tile img{width:100%;max-width:116px;aspect-ratio:1;object-fit:contain;filter:drop-shadow(0 3px 5px #0008)}
+.chat-sticker{width:clamp(120px,42%,190px);max-width:78%;image-rendering:auto;filter:drop-shadow(0 7px 12px #0009)}
+@media(min-width:801px){.layout{grid-template-columns:minmax(0,1.5fr) minmax(300px,.65fr)}.sticker-tray{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:800px){body.in-room .layout{grid-template-columns:1fr}.board-wrap{border-radius:15px}.board{padding:3px;gap:1px}.sticker-tile{min-height:92px}.chat-sticker{width:155px}}
