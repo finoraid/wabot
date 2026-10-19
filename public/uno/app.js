@@ -143,7 +143,7 @@
     const pre = scope === 'global' ? 'g' : 'r', status = $(pre + 'UpStatus');
     if (!file) return;
     if (scope === 'global' && !$('gKey').value) { input.value = ''; return toast('Isi admin key dulu.'); }
-    if (file.size > 20 * 1024 * 1024) { input.value = ''; return toast('File maksimal 20 MB.'); }
+    if (file.size > 50 * 1024 * 1024) { input.value = ''; return toast('File maksimal 50 MB.'); }
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `/uno/upload?scope=${scope}&sid=${encodeURIComponent(socket.id || '')}`);
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');

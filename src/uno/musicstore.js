@@ -19,7 +19,7 @@ export function sniffAudio(b) {
   return null;
 }
 
-export function createMusicStore({ dir, maxFileBytes = 20 * 1024 * 1024, maxTotalBytes = 300 * 1024 * 1024, hooks = {}, log = console.log } = {}) {
+export function createMusicStore({ dir, maxFileBytes = 50 * 1024 * 1024, maxTotalBytes = 500 * 1024 * 1024, hooks = {}, log = console.log } = {}) {
   fs.mkdirSync(dir, { recursive: true });
   const adminLimiter = createAttemptLimiter();
   const ipHits = new Map(); // ip -> [timestamps]
@@ -53,6 +53,8 @@ export function createMusicStore({ dir, maxFileBytes = 20 * 1024 * 1024, maxTota
         adminLimiter.ok(ip);
       } else if (scope === 'room') {
         if (!hooks.isRoomOwner || !hooks.isRoomOwner(url.searchParams.get('sid') || '')) return json(res, 403, { ok: false, error: 'Hanya owner room yang bisa upload musik room.' });
+      } else if (scope === 'snakes') {
+        if (!hooks.isSnakesRoomOwner || !hooks.isSnakesRoomOwner(url.searchParams.get('sid') || '')) return json(res, 403, { ok: false, error: 'Hanya host Ular Tangga yang bisa upload musik room.' });
       } else return json(res, 400, { ok: false, error: 'Scope tidak valid.' });
       if (!rateOk(ip)) return json(res, 429, { ok: false, error: 'Terlalu banyak upload. Coba lagi beberapa menit lagi.' });
 

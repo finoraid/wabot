@@ -31,7 +31,7 @@ const unoHooks = {};
 const httpServer = createWebServer({ qrKey: config.qrKey, startedAt, log, musicDir: path.join(config.dataDir, 'uno-music'), unoHooks });
 const socketIO = new SocketIOServer(httpServer, { serveClient: true, maxHttpBufferSize: 1e6 });
 attachUno(socketIO, unoHooks);
-attachSnakes(socketIO);
+attachSnakes(socketIO, unoHooks);
 httpServer.listen(config.port, () => log(`HTTP di port ${config.port} (UNO ARENA: /uno/, Ular Tangga: /snakes/)`));
 if (config.loginMode === 'qr') {
   log(
